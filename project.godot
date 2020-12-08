@@ -14,6 +14,11 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://material_maker/widgets/file_picker_button/file_picker_button.gd"
 }, {
+"base": "Object",
+"class": "MMCurve",
+"language": "GDScript",
+"path": "res://addons/material_maker/types/curve.gd"
+}, {
 "base": "Node",
 "class": "MMGenBase",
 "language": "GDScript",
@@ -73,11 +78,6 @@ _global_script_classes=[ {
 "class": "MMGenRemote",
 "language": "GDScript",
 "path": "res://addons/material_maker/engine/gen_remote.gd"
-}, {
-"base": "Viewport",
-"class": "MMGenRenderer",
-"language": "GDScript",
-"path": "res://addons/material_maker/engine/renderer.gd"
 }, {
 "base": "MMGenBase",
 "class": "MMGenShader",
@@ -151,6 +151,7 @@ _global_script_classes=[ {
 } ]
 _global_script_class_icons={
 "FilePickerButton": "",
+"MMCurve": "",
 "MMGenBase": "",
 "MMGenBuffer": "",
 "MMGenComment": "",
@@ -163,7 +164,6 @@ _global_script_class_icons={
 "MMGenIterateBuffer": "",
 "MMGenMaterial": "",
 "MMGenRemote": "",
-"MMGenRenderer": "",
 "MMGenShader": "",
 "MMGenSwitch": "",
 "MMGenText": "",
@@ -192,13 +192,18 @@ boot_splash/fullsize=false
 boot_splash/bg_color=Color( 0.0901961, 0.0941176, 0.141176, 1 )
 config/icon="res://icon.png"
 config/windows_native_icon="res://icon.ico"
-config/release="0.93"
+config/release="0.93.99.0"
+config/actual_release="0.94a3"
+
+[audio]
+
+driver="Dummy"
 
 [autoload]
 
 mm_io_types="*res://addons/material_maker/engine/io_types.gd"
 mm_loader="*res://addons/material_maker/engine/loader.gd"
-mm_renderer="*res://addons/material_maker/engine/renderer.tscn"
+mm_renderer="*res://addons/material_maker/engine/multi_renderer.gd"
 
 [debug]
 
@@ -232,6 +237,7 @@ toggle_fullscreen={
 ui_library_popup={
 "deadzone": 0.5,
 "events": [ Object(InputEventKey,"resource_local_to_scene":false,"resource_name":"","device":0,"alt":false,"shift":false,"control":false,"meta":false,"command":false,"pressed":false,"scancode":32,"unicode":0,"echo":false,"script":null)
+, Object(InputEventMouseButton,"resource_local_to_scene":false,"resource_name":"","device":0,"alt":false,"shift":false,"control":false,"meta":false,"command":false,"button_mask":0,"position":Vector2( 0, 0 ),"global_position":Vector2( 0, 0 ),"factor":1.0,"button_index":2,"pressed":false,"doubleclick":false,"script":null)
  ]
 }
 ui_hierarchy_up={

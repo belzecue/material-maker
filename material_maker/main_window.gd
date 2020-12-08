@@ -11,7 +11,7 @@ var current_tab = null
 var updating : bool = false
 var need_update : bool = false
 
-onready var projects = $VBoxContainer/Layout/SplitRight/ProjectsPane/Projects
+onready var projects = $VBoxContainer/Layout/SplitRight/ProjectsPanel/Projects
 
 onready var layout = $VBoxContainer/Layout
 var library
@@ -20,11 +20,11 @@ var histogram
 var preview_3d
 var hierarchy
 
-onready var preview_2d_background = $VBoxContainer/Layout/SplitRight/ProjectsPane/Preview2D
-onready var preview_2d_background_button = $VBoxContainer/Layout/SplitRight/ProjectsPane/PreviewUI/Preview2DButton
-onready var preview_3d_background = $VBoxContainer/Layout/SplitRight/ProjectsPane/Preview3D
-onready var preview_3d_background_button = $VBoxContainer/Layout/SplitRight/ProjectsPane/PreviewUI/Preview3DButton
-onready var preview_3d_background_panel = $VBoxContainer/Layout/SplitRight/ProjectsPane/PreviewUI/Panel
+onready var preview_2d_background = $VBoxContainer/Layout/SplitRight/ProjectsPanel/Preview2D
+onready var preview_2d_background_button = $VBoxContainer/Layout/SplitRight/ProjectsPanel/PreviewUI/Preview2DButton
+onready var preview_3d_background = $VBoxContainer/Layout/SplitRight/ProjectsPanel/Preview3D
+onready var preview_3d_background_button = $VBoxContainer/Layout/SplitRight/ProjectsPanel/PreviewUI/Preview3DButton
+onready var preview_3d_background_panel = $VBoxContainer/Layout/SplitRight/ProjectsPanel/PreviewUI/Panel
 
 const RECENT_FILES_COUNT = 15
 
@@ -53,12 +53,18 @@ const MENU = [
 	{ menu="Edit", command="edit_paste", shortcut="Control+V", description="Paste" },
 	{ menu="Edit", command="edit_duplicate", shortcut="Control+D", description="Duplicate" },
 	{ menu="Edit" },
+	{ menu="Edit", command="edit_select_all", shortcut="Control+A", description="Select All" },
+	{ menu="Edit" },
+	{ menu="Edit", command="edit_load_selection", description="Load Selection" },
+	{ menu="Edit", command="edit_save_selection", description="Save Selection" },
+	{ menu="Edit" },
 	{ menu="Edit", submenu="set_theme", description="Set theme" },
+	{ menu="Edit", command="edit_preferences", description="Preferences" },
 
 	{ menu="View", command="view_center", shortcut="C", description="Center view" },
 	{ menu="View", command="view_reset_zoom", shortcut="Control+0", description="Reset zoom" },
 	{ menu="View" },
-	{ menu="View", submenu="show_panes", description="Panes" },
+	{ menu="View", submenu="show_panels", description="Panels" },
 
 	{ menu="Tools", submenu="create", description="Create" },
 	{ menu="Tools", command="create_subgraph", shortcut="Control+G", description="Create group" },
@@ -68,6 +74,7 @@ const MENU = [
 	{ menu="Tools", command="export_library", description="Export the nodes library" },
 	
 	#{ menu="Tools", command="generate_screenshots", description="Generate screenshots for the library nodes" },
+	{ menu="Tools", command="generate_graph_screenshot", description="Create a screenshot of the current graph" },
 
 	{ menu="Help", command="show_doc", shortcut="F1", description="User manual" },
 	{ menu="Help", command="show_library_item_doc", shortcut="Control+F1", description="Show selected library item documentation" },
@@ -77,15 +84,24 @@ const MENU = [
 	{ menu="Help", command="about", description="About" }
 ]
 
-# warning-ignore:unused_signal
-signal saved_material(material_name, success)
-signal quit
+const DEFAULT_CONFIG = {
+	confirm_quit = true,
+	confirm_close_project = true,
+	vsync = true,
+	ui_scale = 0
+}
 
 func _ready() -> void:
 	get_tree().set_auto_accept_quit(false)
 	
-	# Restore the window position/size if values are present in the configuration cache
+	# Load and nitialize config
 	config_cache.load("user://cache.ini")
+	for k in DEFAULT_CONFIG.keys():
+		if ! config_cache.has_section_key("config", k):
+			config_cache.set_value("config", k, DEFAULT_CONFIG[k])
+	on_config_changed()
+	
+	# Restore the window position/size if values are present in the configuration cache
 	if config_cache.has_section_key("window", "screen"):
 		OS.current_screen = config_cache.get_value("window", "screen")
 	if config_cache.has_section_key("window", "maximized"):
@@ -119,41 +135,56 @@ func _ready() -> void:
 				dir.copy("res://material_maker/examples/"+f, "/examples/"+f)
 		print("Done")
 
-	# Upscale everything if the display requires it (crude hiDPI support).
-	# This prevents UI elements from being too small on hiDPI displays.
-	if OS.get_screen_dpi() >= 192 and OS.get_screen_size().x >= 2048:
-		get_tree().set_screen_stretch(SceneTree.STRETCH_MODE_DISABLED, SceneTree.STRETCH_ASPECT_IGNORE, Vector2(), 2)
-
 	# Set a minimum window size to prevent UI elements from collapsing on each other.
 	OS.min_window_size = Vector2(1024, 600)
 
 	# Set window title
-	OS.set_window_title(ProjectSettings.get_setting("application/config/name")+" v"+ProjectSettings.get_setting("application/config/release"))
+	OS.set_window_title(ProjectSettings.get_setting("application/config/name")+" v"+ProjectSettings.get_setting("application/config/actual_release"))
 
-	layout.load_panes(config_cache)
-	library = layout.get_panel("Library")
-	preview_2d = layout.get_panel("Preview2D")
-	histogram = layout.get_panel("Histogram")
-	preview_3d = layout.get_panel("Preview3D")
+	layout.load_panels(config_cache)
+	library = get_panel("Library")
+	preview_2d = get_panel("Preview2D")
+	histogram = get_panel("Histogram")
+	preview_3d = get_panel("Preview3D")
 	preview_3d.connect("need_update", self, "update_preview_3d")
-	hierarchy = layout.get_panel("Hierarchy")
+	hierarchy = get_panel("Hierarchy")
 	hierarchy.connect("group_selected", self, "on_group_selected")
 
 	# Load recent projects
 	load_recents()
 
 	# Create menus
-	create_menus(MENU, self, $VBoxContainer/Menu)
+	create_menus(MENU, self, $VBoxContainer/TopBar/Menu)
 	
 	new_material()
 	
 	do_load_materials(OS.get_cmdline_args())
 	
 	get_tree().connect("files_dropped", self, "on_files_dropped")
+	
+	mm_renderer.connect("render_queue", $VBoxContainer/TopBar/RenderCounter, "on_counter_change")
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_fullscreen"):
 		OS.window_fullscreen = !OS.window_fullscreen
+
+func get_config(key : String):
+	if ! config_cache.has_section_key("config", key):
+		return DEFAULT_CONFIG[key]
+	return config_cache.get_value("config", key)
+
+func on_config_changed() -> void:
+	OS.vsync_enabled = get_config("vsync")
+	var scale = get_config("ui_scale")
+	if scale <= 0:
+		# If scale is set to 0 (auto), scale everything if the display requires it (crude hiDPI support).
+		# This prevents UI elements from being too small on hiDPI displays.
+		scale = 2 if OS.get_screen_dpi() >= 192 and OS.get_screen_size().x >= 2048 else 1
+	get_tree().set_screen_stretch(SceneTree.STRETCH_MODE_DISABLED, SceneTree.STRETCH_ASPECT_IGNORE, Vector2(), scale)
+
+
+func get_panel(panel_name : String) -> Control:
+	return layout.get_panel(panel_name)
 
 func get_current_graph_edit() -> MMGraphEdit:
 	var graph_edit = projects.get_current_tab_control()
@@ -348,19 +379,19 @@ func _on_SetTheme_id_pressed(id) -> void:
 	config_cache.set_value("window", "theme", theme_name)
 
 
-func create_menu_show_panes(menu : PopupMenu) -> void:
+func create_menu_show_panels(menu : PopupMenu) -> void:
 	menu.clear()
-	var panes = layout.get_panel_list()
-	for i in range(panes.size()):
-		menu.add_check_item(panes[i], i)
-		menu.set_item_checked(i, layout.is_pane_visible(panes[i]))
-	if !menu.is_connected("id_pressed", self, "_on_ShowPanes_id_pressed"):
-		menu.connect("id_pressed", self, "_on_ShowPanes_id_pressed")
+	var panels = layout.get_panel_list()
+	for i in range(panels.size()):
+		menu.add_check_item(panels[i], i)
+		menu.set_item_checked(i, layout.is_panel_visible(panels[i]))
+	if !menu.is_connected("id_pressed", self, "_on_ShowPanels_id_pressed"):
+		menu.connect("id_pressed", self, "_on_ShowPanels_id_pressed")
 
-func _on_ShowPanes_id_pressed(id) -> void:
-	var pane : String = layout.get_panel_list()[id]
-	layout.set_pane_visible(pane, !layout.is_pane_visible(pane))
-	print(pane)
+func _on_ShowPanels_id_pressed(id) -> void:
+	var panel : String = layout.get_panel_list()[id]
+	layout.set_panel_visible(panel, !layout.is_panel_visible(panel))
+
 
 func create_menu_create(menu) -> void:
 	var gens = mm_loader.get_generator_list()
@@ -377,7 +408,7 @@ func _on_Create_id_pressed(id) -> void:
 		graph_edit.create_gen_from_type(gens[id])
 
 
-func new_pane() -> GraphEdit:
+func new_panel() -> GraphEdit:
 	var graph_edit = preload("res://material_maker/panels/graph_edit/graph_edit.tscn").instance()
 	graph_edit.node_factory = $NodeFactory
 	projects.add_child(graph_edit)
@@ -385,7 +416,7 @@ func new_pane() -> GraphEdit:
 	return graph_edit
 
 func new_material() -> void:
-	var graph_edit = new_pane()
+	var graph_edit = new_panel()
 	graph_edit.new_material()
 	graph_edit.update_tab_title()
 	hierarchy.update_from_graph_edit(get_current_graph_edit())
@@ -410,7 +441,11 @@ func do_load_materials(filenames) -> void:
 		do_load_material(f, false)
 	hierarchy.update_from_graph_edit(get_current_graph_edit())
 
-func do_load_material(filename : String, update_hierarchy : bool = true) -> void:
+func do_load_material(filename : String, update_hierarchy : bool = true) -> bool:
+	var file = File.new()
+	file.open(filename, File.READ)
+	filename = file.get_path_absolute()
+	file.close()
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
 	var node_count = 2 # So test below succeeds if graph_edit is null...
 	if graph_edit != null:
@@ -421,27 +456,25 @@ func do_load_material(filename : String, update_hierarchy : bool = true) -> void
 				if node_count > 1:
 					break
 	if node_count > 1:
-		graph_edit = new_pane()
+		graph_edit = new_panel()
 	graph_edit.load_file(filename)
 	add_recent(filename)
 	if update_hierarchy:
 		hierarchy.update_from_graph_edit(get_current_graph_edit())
+	return true
 
 func save_material(graph_edit : MMGraphEdit = null) -> bool:
+	var status = false
 	if graph_edit == null:
 		graph_edit = get_current_graph_edit()
 	if graph_edit != null:
 		if graph_edit.save_path != null:
-			var status = graph_edit.save_file(graph_edit.save_path)
-			if status:
-				add_recent(graph_edit.save_path)
-				return status
+			status = graph_edit.save_file(graph_edit.save_path)
 		else:
-			var status = save_material_as(graph_edit)
+			status = save_material_as(graph_edit)
 			while status is GDScriptFunctionState:
 				status = yield(status, "completed")
-			return status
-	return false
+	return status
 
 func save_material_as(graph_edit : MMGraphEdit = null) -> bool:
 	if graph_edit == null:
@@ -459,7 +492,9 @@ func save_material_as(graph_edit : MMGraphEdit = null) -> bool:
 		while files is GDScriptFunctionState:
 			files = yield(files, "completed")
 		if files.size() == 1:
-			return do_save_material(files[0], graph_edit)
+			if do_save_material(files[0], graph_edit):
+				add_recent(graph_edit.save_path)
+				return true
 	return false
 
 func do_save_material(filename : String, graph_edit : MMGraphEdit = null) -> bool:
@@ -478,17 +513,22 @@ func quit() -> void:
 	dialog.dialog_text = "Quit Material Maker?"
 	dialog.add_cancel("Cancel")
 	add_child(dialog)
-	var result = dialog.ask()
-	while result is GDScriptFunctionState:
-		result = yield(result, "completed")
-	match result:
-		"ok":
-			result = $VBoxContainer/Layout/SplitRight/ProjectsPane/Projects.check_save_tabs()
-			while result is GDScriptFunctionState:
-				result = yield(result, "completed")
-			if result:
-				dim_window()
-				get_tree().quit()
+	if get_config("confirm_quit"):
+		var result = dialog.ask()
+		while result is GDScriptFunctionState:
+			result = yield(result, "completed")
+		if result == "cancel":
+			quitting = false
+			return
+	if get_config("confirm_close_project"):
+		var result = $VBoxContainer/Layout/SplitRight/ProjectsPanel/Projects.check_save_tabs()
+		while result is GDScriptFunctionState:
+			result = yield(result, "completed")
+		if !result:
+			quitting = false
+			return
+	dim_window()
+	get_tree().quit()
 	quitting = false
 
 
@@ -537,16 +577,70 @@ func edit_paste() -> void:
 		graph_edit.paste()
 
 func edit_paste_is_disabled() -> bool:
-	var data = parse_json(OS.clipboard)
-	return data == null
+	return validate_json(OS.clipboard) == ""
 
 func edit_duplicate() -> void:
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
 	if graph_edit != null:
 		graph_edit.duplicate_selected()
 
+func edit_select_all() -> void:
+	var graph_edit : MMGraphEdit = get_current_graph_edit()
+	if graph_edit != null:
+		graph_edit.select_all()
+
 func edit_duplicate_is_disabled() -> bool:
 	return edit_cut_is_disabled()
+
+func edit_load_selection() -> void:
+	var graph_edit = get_current_graph_edit()
+	if graph_edit == null:
+		return
+	var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instance()
+	add_child(dialog)
+	dialog.rect_min_size = Vector2(500, 500)
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.mode = FileDialog.MODE_OPEN_FILE
+	dialog.add_filter("*.mms;Material Maker Selection")
+	if config_cache.has_section_key("path", "selection"):
+		dialog.current_dir = config_cache.get_value("path", "selection")
+	var files = dialog.select_files()
+	while files is GDScriptFunctionState:
+		files = yield(files, "completed")
+	if files.size() == 1:
+		config_cache.set_value("path", "selection", files[0].get_base_dir())
+		var file = File.new()
+		if file.open(files[0], File.READ) == OK:
+			graph_edit.do_paste(parse_json(file.get_as_text()))
+			file.close()
+
+func edit_save_selection() -> void:
+	var graph_edit = get_current_graph_edit()
+	if graph_edit == null:
+		return
+	var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instance()
+	add_child(dialog)
+	dialog.rect_min_size = Vector2(500, 500)
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.mode = FileDialog.MODE_SAVE_FILE
+	dialog.add_filter("*.mms;Material Maker Selection")
+	if config_cache.has_section_key("path", "selection"):
+		dialog.current_dir = config_cache.get_value("path", "selection")
+	var files = dialog.select_files()
+	while files is GDScriptFunctionState:
+		files = yield(files, "completed")
+	if files.size() == 1:
+		config_cache.set_value("path", "selection", files[0].get_base_dir())
+		var file = File.new()
+		if file.open(files[0], File.WRITE) == OK:
+			file.store_string(to_json(graph_edit.serialize_selection()))
+			file.close()
+
+func edit_preferences() -> void:
+	var dialog = load("res://material_maker/windows/preferences/preferences.tscn").instance()
+	add_child(dialog)
+	dialog.connect("config_changed", self, "on_config_changed")
+	dialog.edit_preferences(config_cache)
 
 func view_center() -> void:
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
@@ -595,18 +689,13 @@ func do_add_to_user_library(name, nodes) -> void:
 		data.erase("node_position")
 	elif graph_edit != null:
 		data = graph_edit.serialize_selection()
-	var dir = Directory.new()
-	dir.make_dir("user://library")
-	dir.make_dir("user://library/user")
-	data.library = "user://library/user.json"
-	data.icon = library.get_icon_name(name)
-	var result = nodes[0].generator.render(0, 64, true)
+	# Create thumbnail
+	var result = nodes[0].generator.render(self, 0, 64, true)
 	while result is GDScriptFunctionState:
 		result = yield(result, "completed")
-	result.save_to_file("user://library/user/"+data.icon+".png")
-	result.release()
-	library.add_item(data, name, library.get_preview_texture(data))
-	library.save_library("user://library/user.json")
+	var image : Image = result.get_image()
+	result.release(self)
+	library.add_to_user_library(data, name, image)
 
 func export_library() -> void:
 	var dialog : FileDialog = FileDialog.new()
@@ -717,7 +806,6 @@ var selected_node = null
 func on_selected_node_change(node) -> void:
 	if node != selected_node:
 		selected_node = node
-		preview_2d.set_generator(node.generator if node != null else null)
 		update_preview_2d(node)
 
 func _on_Projects_tab_changed(_tab) -> void:
@@ -776,6 +864,59 @@ func generate_screenshots():
 		result = yield(result, "completed")
 	print(result)
 
+func generate_graph_screenshot():
+	# Prompt for a target PNG file
+	var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instance()
+	add_child(dialog)
+	dialog.rect_min_size = Vector2(500, 500)
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.mode = FileDialog.MODE_SAVE_FILE
+	dialog.add_filter("*.png;PNG image file")
+	var files = dialog.select_files()
+	while files is GDScriptFunctionState:
+		files = yield(files, "completed")
+	if files.size() != 1:
+		return
+	# Generate the image
+	var graph_edit : GraphEdit = get_current_graph_edit()
+	var save_scroll_offset : Vector2 = graph_edit.scroll_offset
+	var save_zoom : float = graph_edit.zoom
+	graph_edit.zoom = 1
+	yield(get_tree(), "idle_frame")
+	var graph_edit_rect = graph_edit.get_global_rect()
+	graph_edit_rect = Rect2(graph_edit_rect.position+Vector2(15, 80), graph_edit_rect.size-Vector2(30, 180))
+	var graph_rect = null
+	for c in graph_edit.get_children():
+		if c is GraphNode:
+			var node_rect = Rect2(c.rect_global_position, c.rect_size)
+			if graph_rect == null:
+				graph_rect = node_rect
+			else:
+				graph_rect = graph_rect.expand(node_rect.position)
+				graph_rect = graph_rect.expand(node_rect.end)
+	graph_rect = graph_rect.grow_individual(50, 20, 50, 80)
+	var image : Image = Image.new()
+	image.create(graph_rect.size.x, graph_rect.size.y, false, get_viewport().get_texture().get_data().get_format())
+	var origin = graph_edit.scroll_offset+graph_rect.position-graph_edit_rect.position
+	var small_image : Image = Image.new()
+	small_image.create(graph_edit_rect.size.x, graph_edit_rect.size.y, false, get_viewport().get_texture().get_data().get_format())
+	for x in range(0, graph_rect.size.x, graph_edit_rect.size.x):
+		for y in range(0, graph_rect.size.y, graph_edit_rect.size.y):
+			graph_edit.scroll_offset = origin+Vector2(x, y)
+			var timer : Timer = Timer.new()
+			add_child(timer)
+			timer.wait_time = 0.05
+			timer.one_shot = true
+			timer.start()
+			yield(timer, "timeout")
+			timer.queue_free()
+			small_image.blit_rect(get_viewport().get_texture().get_data(), graph_edit_rect, Vector2(0, 0))
+			small_image.flip_y()
+			image.blit_rect(small_image, Rect2(Vector2(0, 0), graph_edit_rect.size), Vector2(x, y))
+	graph_edit.scroll_offset = save_scroll_offset
+	graph_edit.zoom = save_zoom
+	image.save_png(files[0])
+
 # Handle dropped files
 
 func get_control_at_position(pos : Vector2, parent : Control) -> Control:
@@ -785,11 +926,15 @@ func get_control_at_position(pos : Vector2, parent : Control) -> Control:
 	return parent
 
 func on_files_dropped(files : PoolStringArray, _screen) -> void:
+	var file : File = File.new()
 	for f in files:
+		if file.open(f, File.READ) != OK:
+			continue
+		f = file.get_path_absolute()
 		match f.get_extension():
 			"ptex":
 				do_load_material(f)
-			"bmp", "hdr", "jpg", "jpeg", "png", "svg", "tga", "webp":
+			"bmp", "exr", "hdr", "jpg", "jpeg", "png", "svg", "tga", "webp":
 				var control : Control = get_control_at_position(get_global_mouse_position(), self)
 				while control != self:
 					if control.has_method("on_drop_image_file"):

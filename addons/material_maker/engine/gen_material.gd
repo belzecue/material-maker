@@ -19,7 +19,7 @@ const TEXTURE_LIST = [
 	{ port=2, texture="emission", sources=[3] },
 	{ port=3, texture="normal", sources=[4] },
 	{ port=4, texture="depth", sources=[6] },
-	{ port=5, texture="sss", sources=[7] }
+	{ port=5, texture="sss", sources=[8] }
 ]
 
 const INPUT_ALBEDO    : int = 0
@@ -29,7 +29,7 @@ const INPUT_EMISSION  : int = 3
 const INPUT_NORMAL    : int = 4
 const INPUT_OCCLUSION : int = 5
 const INPUT_DEPTH     : int = 6
-const INPUT_SSS       : int = 7
+const INPUT_SSS       : int = 8
 
 # The minimum allowed texture size as a power-of-two exponent
 const TEXTURE_SIZE_MIN = 4  # 16x16
@@ -51,7 +51,13 @@ func _ready() -> void:
 	material = SpatialMaterial.new()
 	add_to_group("preview")
 
+func accept_float_expressions() -> bool:
+	return false
+
 func can_be_deleted() -> bool:
+	return false
+
+func toggle_editable() -> bool:
 	return false
 
 func get_type() -> String:
@@ -88,9 +94,14 @@ func source_changed(input_index : int) -> void:
 			need_update[t.texture] = true
 	update_preview()
 
+func all_sources_changed() -> void:
+	for t in TEXTURE_LIST:
+		need_update[t.texture] = true
+	update_preview()
+
 func render_textures() -> void:
 	for t in TEXTURE_LIST:
-		var result
+		var renderer
 		if t.has("port"):
 			if !need_update[t.texture]:
 				continue
@@ -107,18 +118,21 @@ func render_textures() -> void:
 			if source.has("textures"):
 				for k in source.textures.keys():
 					shader_materials[t.texture].set_shader_param(k, source.textures[k])
-			result = mm_renderer.render_material(shader_materials[t.texture], get_image_size(), false)
 		else:
 			generated_textures[t.texture] = null
 			need_update[t.texture] = false
 			continue
-		while result is GDScriptFunctionState:
-			result = yield(result, "completed")
+		renderer = mm_renderer.request(self)
+		while renderer is GDScriptFunctionState:
+			renderer = yield(renderer, "completed")
+		renderer = renderer.render_material(self, shader_materials[t.texture], get_image_size(), true)
+		while renderer is GDScriptFunctionState:
+			renderer = yield(renderer, "completed")
 		if generated_textures[t.texture] == null:
 			generated_textures[t.texture] = ImageTexture.new()
 		var texture = generated_textures[t.texture]
-		result.copy_to_texture(texture)
-		result.release()
+		renderer.copy_to_texture(texture)
+		renderer.release(self)
 		# To work, this must be set after calling `copy_to_texture()`
 		texture.flags |= ImageTexture.FLAG_ANISOTROPIC_FILTER
 		# Disable filtering for small textures, as they're considered to be used
@@ -163,11 +177,14 @@ func update_textures() -> void:
 			update_again = false
 			for t in TEXTURE_LIST:
 				if need_render[t.texture]:
-					var result = mm_renderer.render_material(shader_materials[t.texture], image_size, false)
-					while result is GDScriptFunctionState:
-						result = yield(result, "completed")
-					result.copy_to_texture(generated_textures[t.texture])
-					result.release()
+					var renderer = mm_renderer.request(self)
+					while renderer is GDScriptFunctionState:
+						renderer = yield(renderer, "completed")
+					renderer = renderer.render_material(self, shader_materials[t.texture], image_size, true)
+					while renderer is GDScriptFunctionState:
+						renderer = yield(renderer, "completed")
+					renderer.copy_to_texture(generated_textures[t.texture])
+					renderer.release(self)
 		updating = false
 
 func update_materials(material_list) -> void:
@@ -193,6 +210,7 @@ func update_material(m, file_prefix = null) -> void:
 		# Albedo
 		m.albedo_color = parameters.albedo_color
 		m.albedo_texture = get_generated_texture("albedo", file_prefix)
+		m.flags_albedo_tex_force_srgb = true
 		# Ambient occlusion
 		if get_source(INPUT_OCCLUSION) != null:
 			m.ao_enabled = true
@@ -256,18 +274,16 @@ func update_material(m, file_prefix = null) -> void:
 	else:
 		m.set_shader_param("albedo", parameters.albedo_color)
 		m.set_shader_param("texture_albedo", get_generated_texture("albedo", file_prefix))
+		m.set_shader_param("texture_orm", get_generated_texture("orm", file_prefix))
 		m.set_shader_param("metallic", parameters.metallic)
-		m.set_shader_param("texture_metallic", get_generated_texture("orm", file_prefix))
-		m.set_shader_param("metallic_texture_channel", PoolRealArray([0.0, 0.0, 1.0, 0.0]))
 		m.set_shader_param("roughness", parameters.roughness)
-		m.set_shader_param("texture_roughness", get_generated_texture("orm", file_prefix))
-		m.set_shader_param("roughness_texture_channel", PoolRealArray([0.0, 1.0, 0.0, 0.0]))
 		m.set_shader_param("emission_energy", parameters.emission_energy)
 		m.set_shader_param("texture_emission", get_generated_texture("emission", file_prefix))
 		m.set_shader_param("normal_scale", parameters.normal)
 		m.set_shader_param("texture_normal", get_generated_texture("normal", file_prefix))
 		m.set_shader_param("depth_scale", parameters.depth_scale * 0.2)
 		m.set_shader_param("texture_depth", get_generated_texture("depth", file_prefix))
+		m.set_shader_param("ao_light_affect", parameters.ao)
 
 # Export
 
@@ -317,7 +333,7 @@ func subst_string(s : String, export_context : Dictionary) -> String:
 func create_file_from_template(template : String, file_name : String, export_context : Dictionary) -> bool:
 	var in_file = File.new()
 	var out_file = File.new()
-	if in_file.open(mm_loader.STD_GENDEF_PATH+"/"+template, File.READ) != OK:
+	if in_file.open(MMPaths.STD_GENDEF_PATH+"/"+template, File.READ) != OK:
 		if in_file.open(OS.get_executable_path().get_base_dir()+"/nodes/"+template, File.READ) != OK:
 			print("Cannot find template file "+template)
 			return false
@@ -403,11 +419,11 @@ func export_material(prefix : String, profile : String, size : int = 0) -> void:
 					yield(get_tree(), "idle_frame")
 					yield(get_tree(), "idle_frame")
 				var file_name = subst_string(f.file_name, export_context)
-				var result = render(f.output, size)
+				var result = render(self, f.output, size)
 				while result is GDScriptFunctionState:
 					result = yield(result, "completed")
 				result.save_to_file(file_name)
-				result.release()
+				result.release(self)
 			"template":
 				var file_export_context = export_context.duplicate()
 				if f.has("file_params"):

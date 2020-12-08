@@ -8,6 +8,11 @@ Remote can be used to control parameters from several generators in the same gra
 
 var widgets = []
 
+func _enter_tree():
+	fix()
+	for p in parameters.keys():
+		set_parameter(p, MMType.deserialize_value(MMType.serialize_value(parameters[p])))
+
 func can_be_deleted() -> bool:
 	return name != "gen_parameters"
 
@@ -76,9 +81,10 @@ func get_type_name() -> String:
 func get_parameter_defs() -> Array:
 	var rv = []
 	for w in widgets:
+		var p : Dictionary
 		match w.type:
 			"config_control":
-				var p : Dictionary = { name=w.name, label=w.label, type="enum" }
+				p = { name=w.name, label=w.label, type="enum" }
 				var configurations = w.configurations.keys()
 				configurations.sort()
 				if configurations == [ "False", "True" ]:
@@ -87,11 +93,9 @@ func get_parameter_defs() -> Array:
 					p.values=[]
 					for c in configurations:
 						p.values.push_back({ name=c, value=c })
-				rv.append(p)
 			"linked_control":
 				var linked = w.linked_widgets[0]
-				var p : Dictionary
-				if linked != null && is_inside_tree():
+				if linked != null and is_inside_tree():
 					var gen = get_parent().get_node(linked.node)
 					if gen != null:
 						var gen_params = gen.get_parameter_defs()
@@ -101,40 +105,44 @@ func get_parameter_defs() -> Array:
 								break
 				p.name = w.name
 				p.label = w.label
-				rv.append(p)
 			_:
 				print("Unsupported widget of type "+str(w.type))
+				break
+		if w.has("shortdesc"):
+			p.shortdesc = w.shortdesc
+		if w.has("longdesc"):
+			p.longdesc = w.longdesc
+		rv.append(p)
 	return rv
 
 func set_parameter(p : String, v) -> void:
 	var parent = get_parent()
-	if parent == null:
-		return
-	var widget = get_widget(p)
-	if !widget.empty():
-		match widget.type:
-			"linked_control":
-				for w in widget.linked_widgets:
-					var node = parent.get_node(w.node)
-					if node != null:
-						node.set_parameter(w.widget, v)
-			"config_control":
-				if v is bool:
-					v = 1 if v else 0
-				if v < widget.configurations.size():
-					var configurations = widget.configurations.keys()
-					configurations.sort()
-					for w in widget.configurations[configurations[v]]:
+	if parent != null:
+		var widget = get_widget(p)
+		if !widget.empty():
+			match widget.type:
+				"linked_control":
+					for w in widget.linked_widgets:
 						var node = parent.get_node(w.node)
 						if node != null:
-							node.set_parameter(w.widget, w.value)
-				else:
-					# incorrect configuration index
-					print("error: incorrect config control parameter value")
-					return
+							node.set_parameter(w.widget, v)
+				"config_control":
+					if v is bool:
+						v = 1 if v else 0
+					if v < widget.configurations.size():
+						var configurations = widget.configurations.keys()
+						configurations.sort()
+						for w in widget.configurations[configurations[v]]:
+							var node = parent.get_node(w.node)
+							if node != null:
+								node.set_parameter(w.widget, MMType.deserialize_value(w.value))
+					else:
+						# incorrect configuration index
+						print("error: incorrect config control parameter value")
+						return
 	.set_parameter(p, v)
-	if name == "gen_parameters":
-		get_parent().parameters[p] = v
+	if parent != null and name == "gen_parameters":
+		parent.parameters[p] = v
 
 func create_linked_control(label : String) -> String:
 	var n = get_next_widget_name()
@@ -175,7 +183,7 @@ func link_parameter(widget_name : String, generator : MMGenBase, param : String)
 		return
 	var widget : Dictionary = get_widget(widget_name)
 	widget.linked_widgets.push_back({ node=generator.name, widget=param })
-	if widget.linked_widgets.size() == 1:
+	if !parameters.has(widget_name):
 		match widget.type:
 			"linked_control":
 				parameters[widget_name] = generator.parameters[param]
@@ -188,6 +196,7 @@ func remove_parameter(widget_name : String) -> void:
 		if widgets[i].name == widget_name:
 			widgets.remove(i)
 			break
+	parameters.erase(widget_name)
 	emit_signal("parameter_changed", "__update_all__", null)
 
 func add_configuration(widget_name : String, config_name : String) -> void:

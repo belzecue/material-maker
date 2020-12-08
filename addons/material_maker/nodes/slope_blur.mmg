@@ -13,19 +13,26 @@
 			"to_port": 0
 		},
 		{
-			"from": "edge_detect_3_3_2",
-			"from_port": 0,
-			"to": "gen_outputs",
-			"to_port": 0
-		},
-		{
 			"from": "gen_inputs",
 			"from_port": 1,
 			"to": "edge_detect_3_3_2",
 			"to_port": 1
+		},
+		{
+			"from": "edge_detect_3_3_2",
+			"from_port": 0,
+			"to": "buffer_2",
+			"to_port": 0
+		},
+		{
+			"from": "buffer_2",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
 		}
 	],
 	"label": "Slope Blur",
+	"longdesc": "Applys a blur effect on its input, following slopes of an input height map",
 	"name": "slope_blur",
 	"node_position": {
 		"x": 0,
@@ -40,19 +47,19 @@
 			},
 			"parameters": {
 				"lod": 0,
-				"size": 9
+				"size": 10
 			},
 			"type": "buffer"
 		},
 		{
 			"name": "gen_parameters",
 			"node_position": {
-				"x": -445.666626,
-				"y": -390.666656
+				"x": -462.666626,
+				"y": -397.666656
 			},
 			"parameters": {
-				"param0": 9,
-				"param1": 10
+				"param0": 10,
+				"param1": 30
 			},
 			"type": "remote",
 			"widgets": [
@@ -66,9 +73,15 @@
 						{
 							"node": "edge_detect_3_3_2",
 							"widget": "size"
+						},
+						{
+							"node": "buffer_2",
+							"widget": "size"
 						}
 					],
+					"longdesc": "The resolution of the input image",
 					"name": "param0",
+					"shortdesc": "Size",
 					"type": "linked_control"
 				},
 				{
@@ -79,7 +92,9 @@
 							"widget": "sigma"
 						}
 					],
+					"longdesc": "The strength of the blur filter",
 					"name": "param1",
+					"shortdesc": "Sigma",
 					"type": "linked_control"
 				}
 			]
@@ -95,11 +110,17 @@
 			},
 			"ports": [
 				{
+					"group_size": 0,
+					"longdesc": "The input image",
 					"name": "in",
+					"shortdesc": "Input",
 					"type": "rgba"
 				},
 				{
+					"group_size": 0,
+					"longdesc": "A height map whose slopes control the strength and direction of the blur filter",
 					"name": "heightmap",
+					"shortdesc": "Height map",
 					"type": "f"
 				}
 			],
@@ -117,7 +138,10 @@
 			},
 			"ports": [
 				{
+					"group_size": 0,
+					"longdesc": "Shows the generated blurred image",
 					"name": "port0",
+					"shortdesc": "Output",
 					"type": "rgba"
 				}
 			],
@@ -126,12 +150,12 @@
 		{
 			"name": "edge_detect_3_3_2",
 			"node_position": {
-				"x": -408.725464,
-				"y": -184.178955
+				"x": -401.725464,
+				"y": -199.178955
 			},
 			"parameters": {
-				"sigma": 10,
-				"size": 9
+				"sigma": 30,
+				"size": 10
 			},
 			"seed_value": -47470,
 			"shader_model": {
@@ -153,7 +177,7 @@
 						"type": "f"
 					}
 				],
-				"instance": "vec4 $(name)_fct(vec2 uv) {\n\tfloat dx = 1.0/$size;\n    float v = $heightmap(uv);\n\tvec2 slope = vec2($heightmap(uv+vec2(dx, 0.0))-v, $heightmap(uv+vec2(0.0, dx))-v);\n\tfloat slope_strength = length(slope)*$size;\n\tvec2 e = dx*normalize(slope);\n\tvec4 rv = vec4(0.0);\n\tfloat sum = 0.0;\n\tfloat sigma = max($sigma*slope_strength, 0.0001);\n\tfor (float i = 0.0; i <= 50.0; i += 1.0) {\n\t\tfloat coef = exp(-0.5*(pow(i/sigma, 2.0)))/(6.28318530718*sigma*sigma);\n\t\trv += $in(uv+i*e)*coef;\n\t\tsum += coef;\n\t}\n\treturn rv/sum;\n}",
+				"instance": "vec4 $(name)_fct(vec2 uv) {\n\tfloat dx = 1.0/$size;\n    float v = $heightmap(uv);\n\tvec2 slope = vec2($heightmap(uv+vec2(dx, 0.0))-v, $heightmap(uv+vec2(0.0, dx))-v);\n\tfloat slope_strength = length(slope)*$size;\n    vec2 norm_slope =  (slope_strength == 0.0) ? vec2(0.0, 1.0) : normalize(slope);\n    vec2 e = dx*norm_slope;\n\tvec4 rv = vec4(0.0);\n\tfloat sum = 0.0;\n\tfloat sigma = max($sigma*slope_strength, 0.0001);\n\tfor (float i = 0.0; i <= 50.0; i += 1.0) {\n\t\tfloat coef = exp(-0.5*(pow(i/sigma, 2.0)))/(6.28318530718*sigma*sigma);\n\t\trv += $in(uv+i*e)*coef;\n\t\tsum += coef;\n\t}\n\treturn rv/sum;\n}",
 				"name": "Slope Blur",
 				"outputs": [
 					{
@@ -183,11 +207,24 @@
 				]
 			},
 			"type": "shader"
+		},
+		{
+			"name": "buffer_2",
+			"node_position": {
+				"x": -392.952209,
+				"y": -115.576294
+			},
+			"parameters": {
+				"lod": 0,
+				"size": 10
+			},
+			"type": "buffer"
 		}
 	],
 	"parameters": {
-		"param0": 9,
-		"param1": 10
+		"param0": 10,
+		"param1": 30
 	},
+	"shortdesc": "Slope blur",
 	"type": "graph"
 }

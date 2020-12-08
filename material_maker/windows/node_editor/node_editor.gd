@@ -1,7 +1,5 @@
 extends WindowDialog
 
-var model_data = null
-
 onready var parameter_list : VBoxContainer = $Sizer/Tabs/General/Parameters/Sizer
 onready var input_list : VBoxContainer = $Sizer/Tabs/General/Inputs/Sizer
 onready var output_list : VBoxContainer = $Sizer/Tabs/Outputs/Outputs/Sizer
@@ -31,6 +29,11 @@ func add_item(parent, scene) -> Node:
 func set_model_data(data) -> void:
 	if data.has("name"):
 		$Sizer/Tabs/General/Name/Name.text = data.name
+	if data.has("shortdesc"):
+		$Sizer/Tabs/General/Name/Description.short_description = data.shortdesc
+	if data.has("longdesc"):
+		$Sizer/Tabs/General/Name/Description.long_description = data.longdesc
+	$Sizer/Tabs/General/Name/Description.update_tooltip()
 	if data.has("parameters"):
 		for p in data.parameters:
 			add_item(parameter_list, ParameterEditor).set_model_data(p)
@@ -69,6 +72,10 @@ func get_model_data() -> Dictionary:
 		instance=instance_functions_editor.text,
 		code=main_code_editor.text
 	}
+	if $Sizer/Tabs/General/Name/Description.short_description != "":
+		data.shortdesc = $Sizer/Tabs/General/Name/Description.short_description
+	if $Sizer/Tabs/General/Name/Description.long_description != "":
+		data.longdesc = $Sizer/Tabs/General/Name/Description.long_description
 	var includes : String = includes_editor.text.replace(" ", "")
 	if includes != "":
 		data.includes = includes.split(",")

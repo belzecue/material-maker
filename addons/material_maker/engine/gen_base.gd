@@ -7,6 +7,7 @@ Base class for texture generators, that defines their API
 """
 
 signal parameter_changed(n, v)
+signal rendering_time(t)
 
 const DEFAULT_GENERATED_SHADER : Dictionary = { defs="", code="", textures={}, type="f", f="0.0" }
 
@@ -39,11 +40,22 @@ var parameters = {}
 var seed_locked : bool = false
 var seed_value : int = 0
 
+var preview : int = -1
+var minimized : bool = false
+
 func _ready() -> void:
 	init_parameters()
 
 func _post_load() -> void:
 	pass
+
+func get_hier_name() -> String:
+	if get_parent().is_class("MMGenBase"):
+		return get_parent().get_hier_name()+"/"+name
+	return name
+
+func accept_float_expressions() -> bool:
+	return true
 
 func can_be_deleted() -> bool:
 	return true
@@ -60,6 +72,8 @@ func get_template_name() -> bool:
 func is_editable() -> bool:
 	return false
 
+func get_description() -> String:
+	return ""
 
 func has_randomness() -> bool:
 	return false
@@ -142,23 +156,21 @@ func set_parameter(n : String, v) -> void:
 				get_tree().call_group("preview", "on_float_parameters_changed", parameter_changes)
 				return
 			elif parameter_def.type == "gradient":
-				if old_value != null and v.interpolation == old_value.interpolation and v.points.size() == old_value.points.size():
-					# convert from old format
-					for i in range(old_value.points.size()):
-						if old_value.points[i].has("v"):
-							var old = old_value.points[i]
-							old_value.points[i] = { pos=old.v, r=old.c.r, g=old.c.g, b=old.c.b, a=old.c.a }
-					old_value.points.sort_custom(CustomGradientSorter, "compare")
-					v.points.sort_custom(CustomGradientSorter, "compare")
+				if old_value is MMGradient and v is MMGradient and old_value != null and v.interpolation == old_value.interpolation and v.points.size() == old_value.points.size():
+					old_value.sort()
+					v.sort()
 					var parameter_changes = {}
 					for i in range(old_value.points.size()):
-						for f in [ "pos", "r", "g", "b", "a" ]:
-							if v.points[i][f] != old_value.points[i][f]:
+						if v.points[i].v != old_value.points[i].v:
+							var parameter_name = "p_o%s_%s_%d_pos" % [ str(get_instance_id()), n, i ]
+							parameter_changes[parameter_name] = v.points[i].v
+						for f in [ "r", "g", "b", "a" ]:
+							if v.points[i].c[f] != old_value.points[i].c[f]:
 								var parameter_name = "p_o%s_%s_%d_%s" % [ str(get_instance_id()), n, i, f ]
-								parameter_changes[parameter_name] = v.points[i][f]
+								parameter_changes[parameter_name] = v.points[i].c[f]
 					get_tree().call_group("preview", "on_float_parameters_changed", parameter_changes)
 					return
-		source_changed(0)
+		all_sources_changed()
 
 func notify_output_change(output_index : int) -> void:
 	var targets = get_targets(output_index)
@@ -168,6 +180,12 @@ func notify_output_change(output_index : int) -> void:
 
 func source_changed(input_index : int) -> void:
 	emit_signal("parameter_changed", "__input_changed__", input_index)
+	for i in range(get_output_defs().size()):
+		notify_output_change(i)
+
+func all_sources_changed() -> void:
+	for input_index in get_input_defs().size():
+		emit_signal("parameter_changed", "__input_changed__", input_index)
 	for i in range(get_output_defs().size()):
 		notify_output_change(i)
 
@@ -182,8 +200,8 @@ func get_source(input_index : int) -> OutputPort:
 
 func get_targets(output_index : int) -> Array:
 	var parent = get_parent()
-	if parent != null:
-		return get_parent().get_port_targets(name, output_index)
+	if parent != null and parent.has_method("get_port_targets"):
+		return parent.get_port_targets(name, output_index)
 	return []
 
 # get the list of outputs that depend on the input whose index is passed as parameter
@@ -228,7 +246,7 @@ static func generate_preview_shader(src_code, type, main_fct = "void fragment() 
 	code += main_fct
 	return code
 
-func render(output_index : int, size : int, preview : bool = false) -> Object:
+func render(object: Object, output_index : int, size : int, preview : bool = false) -> Object:
 	var context : MMGenContext = MMGenContext.new()
 	var source = get_shader_code("uv", output_index, context)
 	while source is GDScriptFunctionState:
@@ -244,10 +262,13 @@ func render(output_index : int, size : int, preview : bool = false) -> Object:
 		shader = generate_preview_shader(source, output_type)
 	else:
 		shader = mm_renderer.generate_shader(source)
-	var result = mm_renderer.render_shader(shader, source.textures, size)
-	while result is GDScriptFunctionState:
-		result = yield(result, "completed")
-	return result
+	var renderer = mm_renderer.request(object)
+	while renderer is GDScriptFunctionState:
+		renderer = yield(renderer, "completed")
+	renderer = renderer.render_shader(object, shader, source.textures, size)
+	while renderer is GDScriptFunctionState:
+		renderer = yield(renderer, "completed")
+	return renderer
 
 func get_shader_code(uv : String, output_index : int, context : MMGenContext) -> Dictionary:
 	var rv = _get_shader_code(uv, output_index, context)
@@ -284,6 +305,10 @@ func serialize() -> Dictionary:
 			rv.parameters[p.name] = p.default
 	if seed_locked:
 		rv.seed_value = seed_value
+	if preview >= 0:
+		rv.preview = preview
+	if minimized:
+		rv.minimized = minimized
 	if model != null:
 		rv.type = model
 	else:
@@ -313,8 +338,9 @@ func deserialize(data : Dictionary) -> void:
 		seed_value = data.seed_value
 	else:
 		seed_locked = false
+	preview = data.preview if data.has("preview") else -1
+	minimized = data.has("minimized") and data.minimized
 	_post_load()
-
 
 
 static func define_shader_float_parameters(code : String, material : ShaderMaterial) -> void:

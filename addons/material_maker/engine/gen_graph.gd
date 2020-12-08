@@ -3,6 +3,8 @@ extends MMGenBase
 class_name MMGenGraph
 
 var label : String = "Graph"
+var shortdesc = ""
+var longdesc = ""
 var connections = []
 
 var editable : bool = false
@@ -10,8 +12,7 @@ var editable : bool = false
 var transmits_seed : bool = true
 
 signal connections_changed(removed_connections, added_connections)
-# warning-ignore:unused_signal
-signal hierarchy_changed
+signal hierarchy_changed()
 
 func emit_hierarchy_changed():
 	var top = self
@@ -62,6 +63,16 @@ func toggle_editable() -> bool:
 func is_editable() -> bool:
 	return editable
 
+func get_description() -> String:
+	var desc : String
+	if shortdesc == "":
+		desc = longdesc
+	elif longdesc == "":
+		desc = shortdesc
+	else:
+		desc = shortdesc+"\n"+longdesc
+	return desc
+
 
 func get_parameter_defs() -> Array:
 	if has_node("gen_parameters"):
@@ -86,6 +97,12 @@ func get_output_defs() -> Array:
 func source_changed(input_index : int) -> void:
 	if has_node("gen_inputs"):
 		get_node("gen_inputs").source_changed(input_index)
+
+func all_sources_changed() -> void:
+	if has_node("gen_inputs"):
+		var inputs = get_node("gen_inputs")
+		for i in inputs.get_input_defs().size():
+			inputs.source_changed(i)
 
 func get_port_source(gen_name: String, input_index: int) -> OutputPort:
 	var rv = null
@@ -364,6 +381,8 @@ func create_subgraph(gens : Array) -> MMGenGraph:
 
 func _serialize(data: Dictionary) -> Dictionary:
 	data.label = label
+	data.shortdesc = shortdesc
+	data.longdesc = longdesc
 	data.nodes = []
 	for c in get_children():
 		data.nodes.append(c.serialize())
@@ -373,5 +392,9 @@ func _serialize(data: Dictionary) -> Dictionary:
 func _deserialize(data : Dictionary) -> void:
 	if data.has("label"):
 		label = data.label
+	if data.has("shortdesc"):
+		shortdesc = data.shortdesc
+	if data.has("longdesc"):
+		longdesc = data.longdesc 
 	var nodes = data.nodes if data.has("nodes") else []
 	mm_loader.add_to_gen_graph(self, nodes, data.connections if data.has("connections") else [])

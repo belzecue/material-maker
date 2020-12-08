@@ -5,6 +5,7 @@ var node_factory = null
 
 var save_path = null setget set_save_path
 var need_save = false
+var need_save_crash_recovery = false
 
 var top_generator = null
 var generator = null
@@ -40,14 +41,12 @@ func _gui_input(event) -> void:
 		if selected_nodes.size() == 1 and selected_nodes[0].generator is MMGenGraph:
 			update_view(selected_nodes[0].generator)
 	elif event is InputEventMouseButton:
-		if event.button_index == BUTTON_WHEEL_DOWN and event.control:
+		if event.button_index == BUTTON_WHEEL_UP and event.is_pressed() and event.control:
+			call_deferred("set_scroll_ofs", scroll_offset)
 			zoom *= 1.1
-			print(zoom)
-			get_tree().set_input_as_handled()
-		elif event.button_index == BUTTON_WHEEL_UP and event.control:
+		elif event.button_index == BUTTON_WHEEL_DOWN and event.is_pressed() and event.control:
+			call_deferred("set_scroll_ofs", scroll_offset)
 			zoom /= 1.1
-			print(zoom)
-			get_tree().set_input_as_handled()
 		else:
 			call_deferred("check_last_selected")
 	elif event is InputEventKey and event.pressed:
@@ -57,7 +56,9 @@ func _gui_input(event) -> void:
 	elif event is InputEventMouseMotion:
 		for c in get_children():
 			if c.has_method("get_slot_tooltip"):
-				if c.get_global_rect().has_point(get_global_mouse_position()):
+				var rect = c.get_global_rect()
+				rect = Rect2(rect.position, rect.size*c.get_global_transform().get_scale())
+				if rect.has_point(get_global_mouse_position()):
 					hint_tooltip = c.get_slot_tooltip(get_global_mouse_position()-c.rect_global_position)
 				else:
 					c.clear_connection_labels()
@@ -138,9 +139,16 @@ func set_need_save(ns = true) -> void:
 	if ns != need_save:
 		need_save = ns
 		update_tab_title()
+	if save_path != null:
+		if ns:
+			need_save_crash_recovery = true
+		else:
+			need_save_crash_recovery = false
 
 func set_save_path(path) -> void:
 	if path != save_path:
+		remove_crash_recovery_file()
+		need_save_crash_recovery = false
 		save_path = path
 		update_tab_title()
 		emit_signal("save_path_changed", self, path)
@@ -153,6 +161,21 @@ func clear_view() -> void:
 				set_last_selected(null)
 			remove_child(c)
 			c.free()
+
+func crash_recovery_save() -> void:
+	if !need_save_crash_recovery:
+		return
+	var data = top_generator.serialize()
+	var file = File.new()
+	if file.open(save_path+".mmcr", File.WRITE) == OK:
+		file.store_string(JSON.print(data))
+		file.close()
+		need_save_crash_recovery = false
+
+func remove_crash_recovery_file() -> void:
+	if save_path != null:
+		var dir = Directory.new()
+		dir.remove(save_path+".mmcr")
 
 # Center view
 
@@ -177,6 +200,9 @@ func update_view(g) -> void:
 	update_graph(generator.get_children(), generator.connections)
 	subgraph_ui.visible = generator != top_generator
 	subgraph_ui.get_node("Label").text = generator.label
+	$GraphUI/SubGraphUI/Description.short_description = generator.shortdesc
+	$GraphUI/SubGraphUI/Description.long_description = generator.longdesc
+	$GraphUI/SubGraphUI/Description.update_tooltip()
 	center_view()
 	if generator.get_parent() is MMGenGraph:
 		button_transmits_seed.visible = true
@@ -206,7 +232,6 @@ func update_graph(generators, connections) -> Array:
 		rv.push_back(node)
 	for c in connections:
 		.connect_node("node_"+c.from, c.from_port, "node_"+c.to, c.to_port)
-	
 	return rv
 
 func new_material() -> void:
@@ -258,11 +283,39 @@ func set_new_generator(new_generator) -> void:
 	center_view()
 	set_need_save(false)
 
+func find_buffers(g) -> int:
+	if g is MMGenBuffer:
+		return 1
+	var rv = 0
+	for c in g.get_children():
+		rv += find_buffers(c)
+	return rv
+
 func load_file(filename) -> bool:
-	var new_generator = mm_loader.load_gen(filename)
+	var rescued = false
+	var new_generator = null
+	var file = File.new()
+	if filename != null and file.file_exists(filename+".mmcr"):
+		var dialog = preload("res://material_maker/windows/accept_dialog/accept_dialog.tscn").instance()
+		dialog.dialog_text = "Rescue file for "+filename.get_file()+" was found.\nLoad it?"
+		dialog.get_ok().text = "Rescue"
+		dialog.add_cancel("Load "+filename.get_file())
+		add_child(dialog)
+		var result = dialog.ask()
+		while result is GDScriptFunctionState:
+			result = yield(result, "completed")
+		if result == "ok":
+			new_generator = mm_loader.load_gen(filename+".mmcr")
+	if new_generator != null:
+		rescued = true
+	else:
+		new_generator = mm_loader.load_gen(filename)
 	if new_generator != null:
 		set_save_path(filename)
 		set_new_generator(new_generator)
+		if rescued:
+			set_need_save(true)
+		#print("Material has %d buffers" % find_buffers(new_generator))
 		return true
 	else:
 		var dialog : AcceptDialog = AcceptDialog.new()
@@ -283,6 +336,7 @@ func save_file(filename) -> bool:
 		return false
 	set_save_path(filename)
 	set_need_save(false)
+	remove_crash_recovery_file()
 	return true
 
 func get_material_node() -> MMGenMaterial:
@@ -377,7 +431,7 @@ func paste() -> void:
 	if graph != null:
 		if graph is Dictionary and graph.has("type") and graph.type == "graph":
 			var main_window = get_node("/root/MainWindow")
-			var graph_edit = main_window.new_pane()
+			var graph_edit = main_window.new_panel()
 			var new_generator = mm_loader.create_gen(graph)
 			if new_generator:
 				graph_edit.set_new_generator(new_generator)
@@ -389,6 +443,11 @@ func paste() -> void:
 
 func duplicate_selected() -> void:
 	do_paste(serialize_selection())
+
+func select_all() -> void:
+	for c in get_children():
+		if c is GraphNode:
+			c.selected = true
 
 # Delay after graph update
 
@@ -451,8 +510,27 @@ func _on_ButtonTransmitsSeed_toggled(button_pressed) -> void:
 	if button_pressed != generator.transmits_seed:
 		generator.transmits_seed = button_pressed
 
+# Node selection
+
+var highlighting_connections : bool = false
+
+func highlight_connections() -> void:
+	if highlighting_connections:
+		return
+	highlighting_connections = true
+	while Input.is_mouse_button_pressed(BUTTON_LEFT):
+		yield(get_tree(), "idle_frame")
+	for c in get_connection_list():
+		set_connection_activity(c.from, c.from_port, c.to, c.to_port, 1.0 if get_node(c.from).selected or get_node(c.to).selected else 0.0)
+	highlighting_connections = false
+
 func _on_GraphEdit_node_selected(node) -> void:
 	set_last_selected(node)
+	highlight_connections()
+
+func _on_GraphEdit_node_unselected(node):
+	highlight_connections()
+
 
 func set_last_selected(node) -> void:
 	if node is GraphNode:
@@ -460,20 +538,25 @@ func set_last_selected(node) -> void:
 	else:
 		last_selected = null
 
-func request_popup(from, from_slot, _release_position) -> void:
+func request_popup(node_name : String , slot_index : int, _release_position : Vector2, connect_output : bool) -> void:
 	# Check if the connector was actually dragged
-	var node : GraphNode = get_node(from)
+	var node : GraphNode = get_node(node_name)
 	var node_transform : Transform2D = node.get_global_transform()
-	var output_position = node_transform.xform(node.get_connection_output_position(from_slot)/node_transform.get_scale())
+	var output_position = node_transform.xform(node.get_connection_output_position(slot_index)/node_transform.get_scale())
+	# ignore if drag distance is too short
 	if (get_global_mouse_position()-output_position).length() < 20:
 		# Tell the node its connector was clicked
 		if node.has_method("on_clicked_output"):
-			node.on_clicked_output(from_slot)
+			node.on_clicked_output(slot_index)
+		return
+	# Request the popup
+	node_popup.rect_global_position = get_global_mouse_position()
+	var slot_type
+	if connect_output:
+		slot_type = mm_io_types.types[node.generator.get_input_defs()[slot_index].type].slot_type
 	else:
-		# Request the popup
-		node_popup.rect_global_position = get_global_mouse_position()
-		node_popup.show_popup(mm_io_types.types[node.generator.get_output_defs()[from_slot].type].slot_type)
-		node_popup.set_quick_connect(from, from_slot)
+		slot_type = mm_io_types.types[node.generator.get_output_defs()[slot_index].type].slot_type
+	node_popup.show_popup(node_name, slot_index, slot_type, connect_output)
 
 func check_last_selected() -> void:
 	if last_selected != null and !(is_instance_valid(last_selected) and last_selected.selected):
@@ -482,3 +565,9 @@ func check_last_selected() -> void:
 
 func on_drop_image_file(file_name : String) -> void:
 	do_paste({type="image", image=file_name})
+
+
+func _on_Description_descriptions_changed(short_description, long_description):
+	generator.shortdesc = short_description
+	generator.longdesc = long_description
+

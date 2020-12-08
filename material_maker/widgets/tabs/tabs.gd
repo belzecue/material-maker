@@ -31,11 +31,14 @@ func check_save_tabs() -> bool:
 
 func check_save_tab(tab) -> bool:
 	var tab_control = get_child(tab)
-	if tab_control.need_save:
+	var main_window = get_node("/root/MainWindow")
+	if tab_control.need_save and main_window.get_config("confirm_close_project"):
 		var dialog = preload("res://material_maker/windows/accept_dialog/accept_dialog.tscn").instance()
 		var save_path = tab_control.save_path
 		if save_path == null:
 			save_path = "[unnamed]"
+		else:
+			save_path = save_path.get_file()
 		dialog.dialog_text = "Save "+save_path+" before closing?"
 		#dialog.dialog_autowrap = true
 		dialog.get_ok().text = "Save and close"
@@ -47,18 +50,19 @@ func check_save_tab(tab) -> bool:
 			result = yield(result, "completed")
 		match result:
 			"ok":
-				var main_window = get_node("/root/MainWindow")
-				var tab_node = get_child(tab)
-				var status = main_window.save_material(tab_node)
+				var status = main_window.save_material(tab_control)
 				while status is GDScriptFunctionState:
 					status = yield(status, "completed")
 				if !status:
 					return false
 			"cancel":
 				return false
+			_:
+				if tab_control.has_method("remove_crash_recovery_file"):
+					tab_control.remove_crash_recovery_file()
 	return true
 
-func do_close_custom_action(action : String, tab : int, dialog : AcceptDialog) -> void:
+func do_close_custom_action(_action : String, _tab : int, dialog : AcceptDialog) -> void:
 	dialog.queue_free()
 
 
@@ -105,3 +109,10 @@ func _on_Tabs_tab_changed(tab) -> void:
 
 func _on_Projects_resized() -> void:
 	$Tabs.rect_size.x = rect_size.x
+
+
+func _on_CrashRecoveryTimer_timeout():
+	for i in range($Tabs.get_tab_count()):
+		var tab_control = get_child(i)
+		if tab_control.has_method("crash_recovery_save"):
+			tab_control.crash_recovery_save()

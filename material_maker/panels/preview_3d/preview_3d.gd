@@ -20,16 +20,18 @@ signal need_update(me)
 
 const MENU = [
 	{ menu="Model", submenu="model_list", description="Select" },
+	{ menu="Model", command="configure_model", description="Configure" },
 	{ menu="Model", command="rotate_model", description="Rotate", toggle=true },
 	{ menu="Model/Generate map", submenu="generate_mesh_normal_map", description="Mesh normal" },
 	{ menu="Model/Generate map", submenu="generate_inverse_uv_map", description="Inverse UV" },
 	{ menu="Environment", submenu="environment_list", description="Select" }
 ]
 
+
+var _mouse_start_position := Vector2.ZERO
+
+
 func _ready() -> void:
-	for o in objects.get_children():
-		var m = o.get_surface_material(0)
-		o.set_surface_material(0, m.duplicate())
 	get_node("/root/MainWindow").create_menus(MENU, self, ui)
 	$MaterialPreview/Preview3d/ObjectRotate.play("rotate")
 	_on_Environment_item_selected(0)
@@ -38,7 +40,11 @@ func create_menu_model_list(menu : PopupMenu) -> void:
 	menu.clear()
 	for i in objects.get_child_count():
 		var o = objects.get_child(i)
-		menu.add_item(o.name, i)
+		var thumbnail := load("res://material_maker/panels/preview_3d/thumbnails/meshes/%s.png" % o.name)
+		if thumbnail:
+			menu.add_icon_item(thumbnail, "", i)
+		else:
+			menu.add_item(o.name, i)
 	if !menu.is_connected("id_pressed", self, "_on_Model_item_selected"):
 		menu.connect("id_pressed", self, "_on_Model_item_selected")
 
@@ -46,7 +52,11 @@ func create_menu_environment_list(menu : PopupMenu) -> void:
 	menu.clear()
 	for i in environments.get_child_count():
 		var e = environments.get_child(i)
-		menu.add_item(e.name, i)
+		var thumbnail := load("res://material_maker/panels/preview_3d/thumbnails/environments/%s.png" % e.name)
+		if thumbnail:
+			menu.add_icon_item(thumbnail, "", i)
+		else:
+			menu.add_item(e.name, i)
 	if !menu.is_connected("id_pressed", self, "_on_Environment_item_selected"):
 		menu.connect("id_pressed", self, "_on_Environment_item_selected")
 
@@ -70,10 +80,11 @@ func do_load_custom_mesh(file_path) -> void:
 	get_node("/root/MainWindow").config_cache.set_value("path", "mesh", file_path.get_base_dir())
 	var id = objects.get_child_count()-1
 	var mesh = $ObjLoader.load_obj_file(file_path)
-	var object = objects.get_child(id) as MeshInstance
-	object.mesh = mesh
-	object.set_surface_material(0, SpatialMaterial.new())
-	select_object(id)
+	if mesh != null:
+		var object : MeshInstance = objects.get_child(id)
+		object.mesh = mesh
+		object.update_material()
+		select_object(id)
 
 func select_object(id) -> void:
 	current_object.visible = false
@@ -87,6 +98,11 @@ func _on_Environment_item_selected(id) -> void:
 	$MaterialPreview/Preview3d/CameraPivot/Camera.set_environment(current_environment.environment)
 	current_environment.visible = true
 
+func configure_model() -> void:
+	var popup = preload("res://material_maker/panels/preview_3d/mesh_config_popup.tscn").instance()
+	add_child(popup)
+	popup.configure_mesh(current_object)
+
 func rotate_model(button_pressed = null) -> bool:
 	var object_rotate = $MaterialPreview/Preview3d/ObjectRotate
 	if button_pressed is bool:
@@ -97,7 +113,7 @@ func rotate_model(button_pressed = null) -> bool:
 	return object_rotate.is_playing()
 
 func get_materials() -> Array:
-	if current_object != null:
+	if current_object != null and current_object.get_surface_material(0) != null:
 		return [ current_object.get_surface_material(0) ]
 	return []
 
@@ -117,20 +133,34 @@ func on_gui_input(event) -> void:
 					CAMERA_DISTANCE_MIN,
 					CAMERA_DISTANCE_MAX
 				)
+			BUTTON_LEFT, BUTTON_RIGHT:
+				var mask : int = Input.get_mouse_button_mask()
+				var lpressed : bool = (mask & BUTTON_MASK_LEFT) != 0
+				var rpressed : bool = (mask & BUTTON_MASK_RIGHT) != 0
+				if event.pressed and lpressed != rpressed: # xor
+					Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+					_mouse_start_position = event.global_position
+				elif not lpressed and not rpressed:
+					Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN) # allow and hide cursor warp
+					Input.warp_mouse_position(_mouse_start_position)
+					Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	elif event is InputEventMouseMotion:
 		var motion = 0.01*event.relative
-		var camera_basis = camera.global_transform.basis
-		if event.shift:
-			if event.button_mask & BUTTON_MASK_LEFT:
-				objects.rotate(camera_basis.x.normalized(), motion.y)
-				objects.rotate(camera_basis.y.normalized(), motion.x)
-			elif event.button_mask & BUTTON_MASK_RIGHT:
-				objects.rotate(camera_basis.z.normalized(), motion.x)
+		if abs(motion.y) > abs(motion.x):
+			motion.x = 0
 		else:
-			if event.button_mask & BUTTON_MASK_LEFT:
+			motion.y = 0
+		var camera_basis = camera.global_transform.basis
+		var objects_rotation : int = -1 if event.control else 1 if event.shift else 0
+		if event.button_mask & BUTTON_MASK_LEFT:
+			objects.rotate(camera_basis.x.normalized(), objects_rotation * motion.y)
+			objects.rotate(camera_basis.y.normalized(), objects_rotation * motion.x)
+			if objects_rotation != 1:
 				camera_stand.rotate(camera_basis.x.normalized(), -motion.y)
 				camera_stand.rotate(camera_basis.y.normalized(), -motion.x)
-			elif event.button_mask & BUTTON_MASK_RIGHT:
+		elif event.button_mask & BUTTON_MASK_RIGHT:
+			objects.rotate(camera_basis.z.normalized(), objects_rotation * motion.x)
+			if objects_rotation != 1:
 				camera_stand.rotate(camera_basis.z.normalized(), -motion.x)
 
 
@@ -152,7 +182,7 @@ func do_generate_map(file_name : String, map : String, size : int) -> void:
 	var mesh_normal_mapper = load("res://material_maker/panels/preview_3d/map_renderer.tscn").instance()
 	add_child(mesh_normal_mapper)
 	var id = objects.get_child_count()-1
-	var object = objects.get_child(id) as MeshInstance
+	var object : MeshInstance = objects.get_child(id)
 	var result = mesh_normal_mapper.gen(object.mesh, map, file_name, size)
 	while result is GDScriptFunctionState:
 		result = yield(result, "completed")

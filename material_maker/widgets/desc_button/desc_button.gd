@@ -4,6 +4,8 @@ export var description_type : String
 var short_description : String = ""
 var long_description : String = ""
 
+signal descriptions_changed(short_description, long_description)
+
 func _ready() -> void:
 	update_tooltip()
 
@@ -24,3 +26,4 @@ func _on_Button_pressed() -> void:
 	short_description = result[0]
 	long_description = result[1]
 	update_tooltip()
+	emit_signal("descriptions_changed", short_description, long_description)

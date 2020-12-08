@@ -28,6 +28,10 @@ func get_io_defs() -> Array:
 	var rv : Array = []
 	for p in ports:
 		var port = { name=p.name, type=p.type }
+		if p.has("shortdesc"):
+			port.shortdesc = p.shortdesc
+		if p.has("longdesc"):
+			port.longdesc = p.longdesc
 		if p.has("group_size") and p.group_size > 1:
 			port.group_size = p.group_size
 		rv.push_back(port)
@@ -40,16 +44,6 @@ func get_output_defs() -> Array:
 	return [] if name == "gen_outputs" else get_io_defs()
 
 
-func toggle_editable() -> bool:
-	editable = !editable
-	if editable:
-		model = null
-	return true
-
-func is_editable() -> bool:
-	return editable
-
-
 func add_port() -> void:
 	ports.append({ name="unnamed", type="rgba" })
 	emit_signal("parameter_changed", "__update_all__", null)
@@ -60,6 +54,10 @@ func set_port_name(i : int, n : String) -> void:
 func set_port_type(i : int, t : String) -> void:
 	ports[i].type = t
 	emit_signal("parameter_changed", "__update_all__", null)
+
+func set_port_descriptions(i : int, short_description : String, long_description : String) -> void:
+	ports[i].shortdesc = short_description
+	ports[i].longdesc = long_description
 
 func set_port_group_size(i : int, s : int) -> void:
 	ports[i].group_size = s
@@ -95,6 +93,15 @@ func source_changed(input_index : int) -> void:
 	else:
 		notify_output_change(input_index)
 
+func all_sources_changed() -> void:
+	if name == "gen_outputs":
+		if get_parent() != null:
+			for i in ports.size():
+				get_parent().notify_output_change(i)
+	else:
+		for i in ports.size():
+			notify_output_change(i)
+
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> Dictionary:
 	var source = get_source(output_index)
 	if source != null:
@@ -110,4 +117,4 @@ func _serialize(data: Dictionary) -> Dictionary:
 	return data
 
 func _deserialize(data : Dictionary) -> void:
-	ports = data.ports
+	ports = data.ports.duplicate(true)
