@@ -1,18 +1,20 @@
 extends GraphEdit
 class_name MMGraphEdit
 
+export(String, MULTILINE) var shader_context_defs : String = ""
+
 var node_factory = null
 
 var save_path = null setget set_save_path
-var need_save = false
-var need_save_crash_recovery = false
+var need_save : bool = false
+var need_save_crash_recovery : bool = false
 
 var top_generator = null
 var generator = null
 
 var last_selected = null
 
-onready var node_popup = $"../AddNodePopup"
+onready var node_popup = get_node("/root/MainWindow/AddNodePopup")
 
 onready var timer : Timer = $Timer
 
@@ -30,8 +32,20 @@ func _ready() -> void:
 		add_valid_connection_type(t, 42)
 		add_valid_connection_type(42, t)
 
+func get_project_type() -> String:
+	return "material"
+
+func get_graph_edit():
+	return self
+
 func _gui_input(event) -> void:
-	if event.is_action_pressed("ui_library_popup") && get_rect().has_point(get_local_mouse_position()):
+	if (
+		event.is_action_pressed("ui_library_popup")
+		and not Input.is_key_pressed(KEY_CONTROL)
+		and get_global_rect().has_point(get_global_mouse_position())
+	):
+		# Only popup the UI library if Ctrl is not pressed to avoid conflicting
+		# with the Ctrl + Space shortcut.
 		node_popup.rect_global_position = get_global_mouse_position()
 		node_popup.show_popup()
 	elif event.is_action_pressed("ui_hierarchy_up"):
@@ -47,6 +61,8 @@ func _gui_input(event) -> void:
 		elif event.button_index == BUTTON_WHEEL_DOWN and event.is_pressed() and event.control:
 			call_deferred("set_scroll_ofs", scroll_offset)
 			zoom /= 1.1
+		elif event.button_index == BUTTON_MIDDLE and $Minimap.visible and $Minimap.get_global_rect().has_point(get_global_mouse_position()):
+			$Minimap._gui_input(event)
 		else:
 			call_deferred("check_last_selected")
 	elif event is InputEventKey and event.pressed:
@@ -54,15 +70,17 @@ func _gui_input(event) -> void:
 		if scancode_with_modifiers == KEY_DELETE or scancode_with_modifiers == KEY_BACKSPACE:
 			remove_selection()
 	elif event is InputEventMouseMotion:
-		for c in get_children():
-			if c.has_method("get_slot_tooltip"):
-				var rect = c.get_global_rect()
-				rect = Rect2(rect.position, rect.size*c.get_global_transform().get_scale())
-				if rect.has_point(get_global_mouse_position()):
-					hint_tooltip = c.get_slot_tooltip(get_global_mouse_position()-c.rect_global_position)
-				else:
-					c.clear_connection_labels()
-	return
+		if $Minimap.visible and $Minimap.get_global_rect().has_point(get_global_mouse_position()):
+			$Minimap._gui_input(event)
+		else:
+			for c in get_children():
+				if c.has_method("get_slot_tooltip"):
+					var rect = c.get_global_rect()
+					rect = Rect2(rect.position, rect.size*c.get_global_transform().get_scale())
+					if rect.has_point(get_global_mouse_position()):
+						hint_tooltip = c.get_slot_tooltip(get_global_mouse_position()-c.rect_global_position)
+					else:
+						c.clear_connection_labels()
 
 # Misc. useful functions
 func get_source(node, port) -> Dictionary:
@@ -125,7 +143,7 @@ func remove_node(node) -> void:
 
 func update_tab_title() -> void:
 	if !get_parent().has_method("set_tab_title"):
-		print("no set_tab_title method")
+		#print("no set_tab_title method")
 		return
 	var title = "[unnamed]"
 	if save_path != null:
@@ -161,6 +179,8 @@ func clear_view() -> void:
 				set_last_selected(null)
 			remove_child(c)
 			c.free()
+
+# crash_recovery
 
 func crash_recovery_save() -> void:
 	if !need_save_crash_recovery:
@@ -234,9 +254,9 @@ func update_graph(generators, connections) -> Array:
 		.connect_node("node_"+c.from, c.from_port, "node_"+c.to, c.to_port)
 	return rv
 
-func new_material() -> void:
+func new_material(init_nodes = {nodes=[{name="Material", type="material","parameters":{"size":11}}], connections=[]}) -> void:
 	clear_material()
-	top_generator = mm_loader.create_gen({nodes=[{name="Material", type="material","parameters":{"size":11}}], connections=[]})
+	top_generator = mm_loader.create_gen(init_nodes)
 	if top_generator != null:
 		add_child(top_generator)
 		move_child(top_generator, 0)
@@ -326,6 +346,38 @@ func load_file(filename) -> bool:
 		dialog.popup_centered()
 		return false
 
+# Save
+
+func save() -> bool:
+	var status = false
+	if save_path != null:
+		status = save_file(save_path)
+	else:
+		status = save_as()
+		while status is GDScriptFunctionState:
+			status = yield(status, "completed")
+	return status
+
+func save_as() -> bool:
+	var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instance()
+	add_child(dialog)
+	dialog.rect_min_size = Vector2(500, 500)
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.mode = FileDialog.MODE_SAVE_FILE
+	dialog.add_filter("*.ptex;Procedural Textures File")
+	var main_window = get_node("/root/MainWindow")
+	if main_window.config_cache.has_section_key("path", "project"):
+		dialog.current_dir = main_window.config_cache.get_value("path", "project")
+	var files = dialog.select_files()
+	while files is GDScriptFunctionState:
+		files = yield(files, "completed")
+	if files.size() == 1:
+		if save_file(files[0]):
+			main_window.add_recent(save_path)
+			main_window.config_cache.set_value("path", "project", save_path.get_base_dir())
+			return true
+	return false
+
 func save_file(filename) -> bool:
 	var data = top_generator.serialize()
 	var file = File.new()
@@ -339,6 +391,8 @@ func save_file(filename) -> bool:
 	remove_crash_recovery_file()
 	return true
 
+# Export
+
 func get_material_node() -> MMGenMaterial:
 	for g in top_generator.get_children():
 		if g.has_method("get_export_profiles"):
@@ -348,7 +402,10 @@ func get_material_node() -> MMGenMaterial:
 func export_material(export_prefix, profile) -> void:
 	for g in top_generator.get_children():
 		if g.has_method("export_material"):
-			g.export_material(export_prefix, profile)
+			var result = g.export_material(export_prefix, profile)
+			while result is GDScriptFunctionState:
+				result = yield(result, "completed")
+
 
 # Cut / copy / paste / duplicate
 
@@ -361,7 +418,7 @@ func get_selected_nodes() -> Array:
 
 func remove_selection() -> void:
 	for c in get_children():
-		if c is GraphNode and c.selected and c.name != "Material":
+		if c is GraphNode and c.selected and c.name != "Material" and c.name != "Brush":
 			remove_node(c)
 
 # Maybe move this to gen_graph...
@@ -369,7 +426,7 @@ func serialize_selection() -> Dictionary:
 	var data = { nodes = [], connections = [] }
 	var nodes = []
 	for c in get_children():
-		if c is GraphNode and c.selected and c.name != "Material":
+		if c is GraphNode and c.selected and c.name != "Material" and c.name != "Brush":
 			nodes.append(c)
 	if nodes.empty():
 		return {}
@@ -394,7 +451,7 @@ func serialize_selection() -> Dictionary:
 
 func can_copy() -> bool:
 	for c in get_children():
-		if c is GraphNode and c.selected and c.name != "Material":
+		if c is GraphNode and c.selected and c.name != "Material" and c.name != "Brush":
 			return true
 	return false
 
@@ -449,6 +506,16 @@ func select_all() -> void:
 		if c is GraphNode:
 			c.selected = true
 
+func select_none() -> void:
+	for c in get_children():
+		if c is GraphNode:
+			c.selected = false
+
+func select_invert() -> void:
+	for c in get_children():
+		if c is GraphNode:
+			c.selected = not c.selected
+
 # Delay after graph update
 
 func send_changed_signal() -> void:
@@ -465,6 +532,8 @@ func can_drop_data(_position, data) -> bool:
 	return typeof(data) == TYPE_COLOR or typeof(data) == TYPE_DICTIONARY and (data.has('type') or (data.has('nodes') and data.has('connections')))
 
 func drop_data(position, data) -> void:
+	if typeof(data) == TYPE_DICTIONARY and data.has("tree_item"):
+		get_node("/root/MainWindow/NodeLibraryManager").item_created(data.tree_item)
 	# The following mitigates the SpinBox problem (captures mouse while dragging)
 	if Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED:
 		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
@@ -528,7 +597,7 @@ func _on_GraphEdit_node_selected(node) -> void:
 	set_last_selected(node)
 	highlight_connections()
 
-func _on_GraphEdit_node_unselected(node):
+func _on_GraphEdit_node_unselected(_node):
 	highlight_connections()
 
 
@@ -541,6 +610,8 @@ func set_last_selected(node) -> void:
 func request_popup(node_name : String , slot_index : int, _release_position : Vector2, connect_output : bool) -> void:
 	# Check if the connector was actually dragged
 	var node : GraphNode = get_node(node_name)
+	if node == null:
+		return
 	var node_transform : Transform2D = node.get_global_transform()
 	var output_position = node_transform.xform(node.get_connection_output_position(slot_index)/node_transform.get_scale())
 	# ignore if drag distance is too short
@@ -570,4 +641,3 @@ func on_drop_image_file(file_name : String) -> void:
 func _on_Description_descriptions_changed(short_description, long_description):
 	generator.shortdesc = short_description
 	generator.longdesc = long_description
-

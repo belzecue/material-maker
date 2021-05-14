@@ -63,7 +63,7 @@ func get_modifiers(event):
 	return new_modifiers
 
 func _on_LineEdit_gui_input(event : InputEvent) -> void:
-	if !$Slider.visible:
+	if !$Slider.visible or !editable:
 		return
 	if event is InputEventMouseButton and event.button_index == BUTTON_LEFT:
 		if event.is_pressed():
@@ -130,6 +130,9 @@ func _on_LineEdit_text_entered(new_text : String, release = true) -> void:
 		$Slider.visible = false
 	if release:
 		release_focus()
+
+func _on_FloatEdit_focus_entered():
+	select_all()
 
 func _on_LineEdit_focus_exited() -> void:
 	_on_LineEdit_text_entered(text, false)

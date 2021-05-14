@@ -54,10 +54,10 @@ func _ready() -> void:
 
 
 func _gui_input(event) -> void:
-	if (event is InputEventMouseButton && event.button_index == BUTTON_LEFT):
+	if event is InputEventMouseButton && (event.button_index == BUTTON_LEFT || event.button_index == BUTTON_MIDDLE):
 		if (event.is_pressed()):
 			_is_pressing = true
-			var click_location = _convert_to_graph_position(event.position - _map_padding) - _graph_padding
+			var click_location = _convert_to_graph_position(get_global_mouse_position() - get_global_rect().position - _map_padding) - _graph_padding
 
 			if (graph_edit):
 				var scroll_offset = get_scroll_offset()
@@ -67,7 +67,7 @@ func _gui_input(event) -> void:
 
 		accept_event()
 	elif (event is InputEventMouseMotion && _is_pressing):
-		var click_location = _convert_to_graph_position(event.position - _map_padding) - _graph_padding
+		var click_location = _convert_to_graph_position(get_global_mouse_position() - get_global_rect().position - _map_padding) - _graph_padding
 
 		if (graph_edit):
 			var scroll_offset = get_scroll_offset()
@@ -80,6 +80,11 @@ func _draw() -> void:
 	var centering_offset = _convert_from_graph_position(_graph_padding)
 	var map_offset = _map_padding + centering_offset
 
+	for line in _graph_lines:
+		var from_position = _convert_from_graph_position(line.from_position) + map_offset
+		var to_position = _convert_from_graph_position(line.to_position) + map_offset
+		draw_line(from_position, to_position, Color(1.0, 1.0, 1.0, 0.1))
+
 	for node in _graph_nodes:
 		var position = _convert_from_graph_position(node.position) + map_offset
 		var size = _convert_from_graph_position(node.size)
@@ -91,11 +96,6 @@ func _draw() -> void:
 			draw_rect(node_shape, node.node_color, false)
 		else:
 			draw_rect(node_shape, node.node_color)
-
-	for line in _graph_lines:
-		var from_position = _convert_from_graph_position(line.from_position) + map_offset
-		var to_position = _convert_from_graph_position(line.to_position) + map_offset
-		draw_line(from_position, to_position, line.from_color)
 
 	var camera_center = _convert_from_graph_position(_camera_position + _camera_size / 2) + map_offset
 	var camera_viewport = _convert_from_graph_position(_camera_size)

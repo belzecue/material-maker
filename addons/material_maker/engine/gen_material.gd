@@ -35,7 +35,7 @@ const INPUT_SSS       : int = 8
 const TEXTURE_SIZE_MIN = 4  # 16x16
 
 # The maximum allowed texture size as a power-of-two exponent
-const TEXTURE_SIZE_MAX = 12  # 4096x4096
+const TEXTURE_SIZE_MAX = 13  # 8192x8192
 
 # The default texture size as a power-of-two exponent
 const TEXTURE_SIZE_DEFAULT = 10  # 1024x1024
@@ -251,6 +251,8 @@ func update_material(m, file_prefix = null) -> void:
 		if get_source(INPUT_DEPTH) != null and parameters.depth_scale > 0:
 			m.depth_enabled = true
 			m.depth_deep_parallax = true
+			# Increase level of detail for parallax occlusion mapping (the default is 32).
+			m.depth_max_layers = 64
 			m.depth_scale = parameters.depth_scale * 0.2
 			m.depth_texture = get_generated_texture("depth", file_prefix)
 		else:
@@ -376,7 +378,7 @@ func export_material(prefix : String, profile : String, size : int = 0) -> void:
 		if parameters.has(p.name):
 			value = parameters[p.name]
 		match p.type:
-			"float", "size":
+			"float", "size", "boolean":
 				export_context["$(param:"+p.name+")"] = str(value)
 			"color":
 				export_context["$(param:"+p.name+".r)"] = str(value.r)

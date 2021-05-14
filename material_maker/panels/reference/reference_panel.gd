@@ -33,20 +33,19 @@ func get_color_under_cursor() -> Color:
 	return c
 
 func _on_Image_gui_input(event) -> void:
-	if current_image < 0:
-		return
 	var m : ShaderMaterial = $VBoxContainer/Image.material
 	var canvas_size : Vector2 = $VBoxContainer/Image.get_size()
 	var image_size : Vector2 = m.get_shader_param("image_size")
-	var scale = m.get_shader_param("scale")
+	var scale : float = m.get_shader_param("scale")
 	var center : Vector2 = m.get_shader_param("center")
 	var new_center : Vector2 = center
-	var multiplier : Vector2 = Vector2(canvas_size.x*min(image_size.x/image_size.y, 1.0), canvas_size.y*min(image_size.y/image_size.x, 1.0))
+	var ratio : Vector2 = canvas_size/image_size
+	var multiplier : Vector2 = image_size*min(ratio.x, ratio.y)
 	var image_rect : Rect2 = $VBoxContainer/Image.get_global_rect()
 	var offset_from_center : Vector2 = get_global_mouse_position()-(image_rect.position+0.5*image_rect.size)
 	if event is InputEventMouseButton:
 		if event.pressed:
-			var new_scale = scale
+			var new_scale : float = scale
 			if event.button_index == BUTTON_LEFT and selected_slot != null:
 				if selected_slot.get_parent() == $VBoxContainer/Colors:
 					selected_slot.set_color(get_color_under_cursor())
@@ -62,18 +61,19 @@ func _on_Image_gui_input(event) -> void:
 				new_scale = max(new_scale-0.05, 0.05)
 			elif event.button_index == BUTTON_MIDDLE:
 				dragging = true
+			elif event.button_index == BUTTON_RIGHT:
+				$ContextMenu.popup(Rect2(get_global_mouse_position(), $ContextMenu.get_minimum_size()))
 			if new_scale != scale:
-				m.set_shader_param("scale", new_scale)
-				m.set_shader_param("center", center+offset_from_center*(scale-new_scale)/multiplier)
 				images[current_image].scale = new_scale
-				images[current_image].center = center+offset_from_center*(scale-new_scale)/multiplier
+				m.set_shader_param("scale", images[current_image].scale)
+				new_center = center+offset_from_center*(scale-new_scale)/multiplier
 		elif event.button_index == BUTTON_MIDDLE:
 			dragging = false
 		elif event.button_index == BUTTON_LEFT:
 			gradient = null
 	elif event is InputEventMouseMotion:
 		if dragging:
-			new_center = m.get_shader_param("center")-event.relative/multiplier*scale
+			new_center = m.get_shader_param("center")-event.relative*scale/multiplier
 		elif gradient != null:
 			var new_gradient_length = gradient_length + event.relative.length()
 			if gradient_length > 0.0:
@@ -118,3 +118,30 @@ func change_image(offset = 0):
 	m.set_shader_param("image_size", t.get_data().get_size())
 	m.set_shader_param("scale", i.scale)
 	m.set_shader_param("center", i.center)
+
+
+func _on_ContextMenu_about_to_show():
+	$ContextMenu.set_item_disabled(1, images.empty())
+
+func _on_ContextMenu_index_pressed(index):
+	match index:
+		0:
+			var dialog = FileDialog.new()
+			add_child(dialog)
+			dialog.rect_min_size = Vector2(500, 500)
+			dialog.access = FileDialog.ACCESS_FILESYSTEM
+			dialog.mode = FileDialog.MODE_OPEN_FILE
+			dialog.add_filter("*.bmp;BMP Image")
+			dialog.add_filter("*.exr;EXR Image")
+			dialog.add_filter("*.hdr;Radiance HDR Image")
+			dialog.add_filter("*.jpg,*.jpeg;JPEG Image")
+			dialog.add_filter("*.png;PNG Image")
+			dialog.add_filter("*.svg;SVG Image")
+			dialog.add_filter("*.tga;TGA Image")
+			dialog.add_filter("*.webp;WebP Image")
+			dialog.connect("file_selected", self, "on_drop_image_file")
+			dialog.connect("popup_hide", dialog, "queue_free")
+			dialog.popup_centered()
+		1:
+			images.remove(current_image)
+			change_image(0)

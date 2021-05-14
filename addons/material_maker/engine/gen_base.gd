@@ -50,9 +50,15 @@ func _post_load() -> void:
 	pass
 
 func get_hier_name() -> String:
-	if get_parent().is_class("MMGenBase"):
-		return get_parent().get_hier_name()+"/"+name
-	return name
+	var type = load("res://addons/material_maker/engine/gen_base.gd")
+	var rv = name
+	var object = get_parent()
+	print(object.get_script().resource_path)
+	while object is type:
+		rv = object.name+"/"+rv
+		object = object.get_parent()
+		print(object.get_script().resource_path)
+	return rv
 
 func accept_float_expressions() -> bool:
 	return true
@@ -106,7 +112,9 @@ func init_parameters() -> void:
 			else:
 				print("No default value for parameter "+p.name)
 
-func set_position(p) -> void:
+func set_position(p, force_recalc_seed = false) -> void:
+	if !force_recalc_seed && position == p:
+		return
 	position = p
 	if has_randomness() and !is_seed_locked() and is_inside_tree():
 		get_tree().call_group("preview", "on_float_parameters_changed", { "seed_o"+str(get_instance_id()): get_seed() })
@@ -131,7 +139,8 @@ func get_parameter(n : String):
 	if parameters.has(n):
 		return parameters[n]
 	else:
-		return get_parameter_def(n).default
+		var parameter_def = get_parameter_def(n)
+		return parameter_def.default
 
 class CustomGradientSorter:
 	static func compare(a, b) -> bool:
@@ -225,13 +234,11 @@ static func generate_preview_shader(src_code, type, main_fct = "void fragment() 
 	code = "shader_type canvas_item;\n"
 	code += "render_mode blend_disabled;\n"
 	code += "uniform float preview_size = 64;\n"
-	var file = File.new()
-	file.open("res://addons/material_maker/common.shader", File.READ)
-	code += file.get_as_text()
+	code += "uniform sampler2D mesh_inv_uv_tex;\n"
+	code += "uniform vec3 mesh_aabb_position;\n"
+	code += "uniform vec3 mesh_aabb_size;\n"
+	code += mm_renderer.common_shader
 	code += "\n"
-	if src_code.has("textures"):
-		for t in src_code.textures.keys():
-			code += "uniform sampler2D "+t+";\n"
 	if src_code.has("globals"):
 		for g in src_code.globals:
 			code += g
@@ -284,6 +291,9 @@ func get_shader_code(uv : String, output_index : int, context : MMGenContext) ->
 		print("Missing type for node ")
 		print(rv)
 	return rv
+
+func get_output_attributes(output_index : int) -> Dictionary:
+	return {}
 
 func _get_shader_code(_uv, _output_index, _context) -> Dictionary:
 	return {}

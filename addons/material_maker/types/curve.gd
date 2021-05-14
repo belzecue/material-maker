@@ -49,14 +49,8 @@ func remove_point(index : int) -> bool:
 func get_point_count() -> int:
 	return points.size()
 
-func get_point(i : int) -> float:
-	return points[i]
-
 func set_point(i : int, v : Point) -> void:
 	points[i] = v
-
-func get_value(x) -> float:
-	return 0.0
 
 func get_shader_params(name) -> Dictionary:
 	var rv = {}
@@ -71,12 +65,21 @@ func get_shader(name) -> String:
 	var shader
 	shader = "float "+name+"_curve_fct(float x) {\n"
 	for i in range(points.size()-1):
-		shader += "if (x <= p_"+name+"_"+str(i+1)+"_x) {"
-		shader += "float dx = x - p_"+name+"_"+str(i)+"_x;"
-		shader += "float t = dx/(p_"+name+"_"+str(i+1)+"_x - p_"+name+"_"+str(i)+"_x);"
-		shader += "float y1 = p_"+name+"_"+str(i)+"_y + dx*p_"+name+"_"+str(i)+"_rs;"
-		shader += "float y2 = p_"+name+"_"+str(i+1)+"_y + (x - p_"+name+"_"+str(i+1)+"_x)*p_"+name+"_"+str(i+1)+"_ls;"
-		shader += "return mix(y1, y2, 3.0*t*t-2.0*t*t*t);"
+		shader += "if (x <= p_"+name+"_"+str(i+1)+"_x) {\n"
+		shader += "float dx = x - p_"+name+"_"+str(i)+"_x;\n"
+		shader += "float d = p_"+name+"_"+str(i+1)+"_x - p_"+name+"_"+str(i)+"_x;\n"
+		shader += "float t = dx/d;\n"
+		shader += "float omt = (1.0 - t);\n"
+		shader += "float omt2 = omt * omt;\n"
+		shader += "float omt3 = omt2 * omt;\n"
+		shader += "float t2 = t * t;\n"
+		shader += "float t3 = t2 * t;\n"
+		shader += "d /= 3.0;\n"
+		shader += "float y1 = p_"+name+"_"+str(i)+"_y;\n"
+		shader += "float yac = p_"+name+"_"+str(i)+"_y + d*p_"+name+"_"+str(i)+"_rs;\n"
+		shader += "float ybc = p_"+name+"_"+str(i+1)+"_y - d*p_"+name+"_"+str(i+1)+"_ls;\n"
+		shader += "float y2 = p_"+name+"_"+str(i+1)+"_y;\n"
+		shader += "return y1*omt3 + yac*omt2*t*3.0 + ybc*omt*t2*3.0 + y2*t3;\n"
 		shader += "}\n"
 	shader += "}\n"
 	return shader

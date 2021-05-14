@@ -7,7 +7,7 @@ shapes.
 They are based on a very small set of basic shapes, that can be combined using operators,
 and finally output as a greyscale image using the **sdShow** node.
 
-All output samples shown in this sections are images generated through the **sdShow** node.
+All output samples shown in this section are images generated through the **sdShow** node.
 
 All Signed Distance Functions nodes are based on code written by Inigo Quilez that can be found
 `on this page`__.
@@ -32,6 +32,7 @@ Shapes
 	node_simple_sdf_shapes_sdbox
 	node_simple_sdf_shapes_sdrhombus
 	node_simple_sdf_shapes_sdarc
+	node_simple_sdf_shapes_sdpolygon
 
 Operators
 +++++++++
@@ -46,6 +47,7 @@ Operators
 	node_simple_sdf_operators_sdmorph
 	node_simple_sdf_operators_sdrepeat
 	node_simple_sdf_operators_sdcirclerepeat
+	node_simple_sdf_operators_sd_mask_to_sdf
 
 Transforms
 ++++++++++

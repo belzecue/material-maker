@@ -1,29 +1,35 @@
 extends ViewportContainer
 
 const CAMERA_DISTANCE_MIN = 1.0
-const CAMERA_DISTANCE_MAX = 10.0
+const CAMERA_DISTANCE_MAX = 15.0
+const CAMERA_FOV_MIN = 10
+const CAMERA_FOV_MAX = 90
 
 export var ui_path : String = "UI/Preview3DUI"
 
 onready var objects = $MaterialPreview/Preview3d/Objects
 onready var current_object = objects.get_child(0)
 
-onready var environments = $MaterialPreview/Preview3d/Environments
-onready var current_environment = environments.get_child(0)
-
 onready var camera_stand = $MaterialPreview/Preview3d/CameraPivot
 onready var camera = $MaterialPreview/Preview3d/CameraPivot/Camera
+onready var sun = $MaterialPreview/Preview3d/Sun
 
-onready var ui = get_node(ui_path)
+var ui
 
 signal need_update(me)
 
 const MENU = [
 	{ menu="Model", submenu="model_list", description="Select" },
 	{ menu="Model", command="configure_model", description="Configure" },
-	{ menu="Model", command="rotate_model", description="Rotate", toggle=true },
+	{ menu="Model/Rotate", command="set_rotate_model_speed", description="Off", command_parameter=0 },
+	{ menu="Model/Rotate", command="set_rotate_model_speed", description="Slow", command_parameter=0.01 },
+	{ menu="Model/Rotate", command="set_rotate_model_speed", description="Medium", command_parameter=0.05 },
+	{ menu="Model/Rotate", command="set_rotate_model_speed", description="Fast", command_parameter=0.1 },
 	{ menu="Model/Generate map", submenu="generate_mesh_normal_map", description="Mesh normal" },
 	{ menu="Model/Generate map", submenu="generate_inverse_uv_map", description="Inverse UV" },
+	{ menu="Model/Generate map", submenu="generate_curvature_map", description="Curvature" },
+	{ menu="Model/Generate map", submenu="generate_ao_map", description="Ambient Occlusion" },
+	{ menu="Model/Generate map", submenu="generate_thickness_map", description="Thickness" },
 	{ menu="Environment", submenu="environment_list", description="Select" }
 ]
 
@@ -32,9 +38,24 @@ var _mouse_start_position := Vector2.ZERO
 
 
 func _ready() -> void:
+	# Enable viewport debanding if running with Godot 3.2.4 or later.
+	# This mostly suppresses banding artifacts at a very small performance cost.
+	$MaterialPreview.set("debanding", true)
+
+	ui = get_node(ui_path)
 	get_node("/root/MainWindow").create_menus(MENU, self, ui)
 	$MaterialPreview/Preview3d/ObjectRotate.play("rotate")
 	_on_Environment_item_selected(0)
+
+	# Required for supersampling to work.
+	$MaterialPreview.get_texture().flags = Texture.FLAG_FILTER
+
+	$MaterialPreview.connect("size_changed", self, "_on_material_preview_size_changed")
+
+	# Delay setting the sun shadow by one frame. Otherwise, the large 3D preview
+	# attempts to read the setting before the configuration file is loaded.
+	yield(get_tree(), "idle_frame")
+	sun.shadow_enabled = get_node("/root/MainWindow").get_config("ui_3d_preview_sun_shadow")
 
 func create_menu_model_list(menu : PopupMenu) -> void:
 	menu.clear()
@@ -49,14 +70,7 @@ func create_menu_model_list(menu : PopupMenu) -> void:
 		menu.connect("id_pressed", self, "_on_Model_item_selected")
 
 func create_menu_environment_list(menu : PopupMenu) -> void:
-	menu.clear()
-	for i in environments.get_child_count():
-		var e = environments.get_child(i)
-		var thumbnail := load("res://material_maker/panels/preview_3d/thumbnails/environments/%s.png" % e.name)
-		if thumbnail:
-			menu.add_icon_item(thumbnail, "", i)
-		else:
-			menu.add_item(e.name, i)
+	get_node("/root/MainWindow/EnvironmentManager").create_environment_menu(menu)
 	if !menu.is_connected("id_pressed", self, "_on_Environment_item_selected"):
 		menu.connect("id_pressed", self, "_on_Environment_item_selected")
 
@@ -93,24 +107,26 @@ func select_object(id) -> void:
 	emit_signal("need_update", [ self ])
 
 func _on_Environment_item_selected(id) -> void:
-	current_environment.visible = false
-	current_environment = environments.get_child(id)
-	$MaterialPreview/Preview3d/CameraPivot/Camera.set_environment(current_environment.environment)
-	current_environment.visible = true
+	var environment_manager = get_node("/root/MainWindow/EnvironmentManager")
+	var environment = $MaterialPreview/Preview3d/CameraPivot/Camera.environment
+	environment_manager.apply_environment(id, environment, sun)
+
+func _on_material_preview_size_changed() -> void:
+	# Apply supersampling to the new viewport size.
+	$MaterialPreview.size = rect_size * get_node("/root/MainWindow").preview_rendering_scale_factor
 
 func configure_model() -> void:
 	var popup = preload("res://material_maker/panels/preview_3d/mesh_config_popup.tscn").instance()
 	add_child(popup)
 	popup.configure_mesh(current_object)
 
-func rotate_model(button_pressed = null) -> bool:
+func set_rotate_model_speed(speed: float) -> void:
 	var object_rotate = $MaterialPreview/Preview3d/ObjectRotate
-	if button_pressed is bool:
-		if button_pressed:
-			object_rotate.play("rotate")
-		else:
-			object_rotate.stop(false)
-	return object_rotate.is_playing()
+	object_rotate.playback_speed = speed
+	if speed == 0:
+		object_rotate.stop(false)
+	else:
+		object_rotate.play("rotate")
 
 func get_materials() -> Array:
 	if current_object != null and current_object.get_surface_material(0) != null:
@@ -119,20 +135,29 @@ func get_materials() -> Array:
 
 func on_gui_input(event) -> void:
 	if event is InputEventMouseButton:
-		$MaterialPreview/Preview3d/ObjectRotate.stop(false)
+		if event.button_index == BUTTON_LEFT or event.button_index == BUTTON_RIGHT or event.button_index == BUTTON_MIDDLE:
+			# Don't stop rotating the preview on mouse wheel usage (zoom change).
+			$MaterialPreview/Preview3d/ObjectRotate.stop(false)
+
 		match event.button_index:
 			BUTTON_WHEEL_UP:
-				camera.translation.z = clamp(
-					camera.translation.z / (1.01 if event.shift else 1.1),
-					CAMERA_DISTANCE_MIN,
-					CAMERA_DISTANCE_MAX
-				)
+				if event.command:
+					camera.fov = clamp(camera.fov + 1, CAMERA_FOV_MIN, CAMERA_FOV_MAX)
+				else:
+					camera.translation.z = clamp(
+						camera.translation.z / (1.01 if event.shift else 1.1),
+						CAMERA_DISTANCE_MIN,
+						CAMERA_DISTANCE_MAX
+					)
 			BUTTON_WHEEL_DOWN:
-				camera.translation.z = clamp(
-					camera.translation.z * (1.01 if event.shift else 1.1),
-					CAMERA_DISTANCE_MIN,
-					CAMERA_DISTANCE_MAX
-				)
+				if event.command:
+					camera.fov = clamp(camera.fov - 1, CAMERA_FOV_MIN, CAMERA_FOV_MAX)
+				else:
+					camera.translation.z = clamp(
+						camera.translation.z * (1.01 if event.shift else 1.1),
+						CAMERA_DISTANCE_MIN,
+						CAMERA_DISTANCE_MAX
+					)
 			BUTTON_LEFT, BUTTON_RIGHT:
 				var mask : int = Input.get_mouse_button_mask()
 				var lpressed : bool = (mask & BUTTON_MASK_LEFT) != 0
@@ -142,7 +167,7 @@ func on_gui_input(event) -> void:
 					_mouse_start_position = event.global_position
 				elif not lpressed and not rpressed:
 					Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN) # allow and hide cursor warp
-					Input.warp_mouse_position(_mouse_start_position)
+					get_viewport().warp_mouse(_mouse_start_position)
 					Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 	elif event is InputEventMouseMotion:
 		var motion = 0.01*event.relative
@@ -179,11 +204,11 @@ func generate_map(generate_function : String, size : int) -> void:
 	dialog.popup_centered()
 
 func do_generate_map(file_name : String, map : String, size : int) -> void:
-	var mesh_normal_mapper = load("res://material_maker/panels/preview_3d/map_renderer.tscn").instance()
+	var mesh_normal_mapper = load("res://material_maker/tools/map_renderer/map_renderer.tscn").instance()
 	add_child(mesh_normal_mapper)
 	var id = objects.get_child_count()-1
 	var object : MeshInstance = objects.get_child(id)
-	var result = mesh_normal_mapper.gen(object.mesh, map, file_name, size)
+	var result = mesh_normal_mapper.gen(object.mesh, map, "save_to_file", [ file_name ], size)
 	while result is GDScriptFunctionState:
 		result = yield(result, "completed")
 	mesh_normal_mapper.queue_free()
@@ -213,3 +238,30 @@ func generate_inverse_uv_map(i : int) -> void:
 
 func do_generate_inverse_uv_map(file_name : String, size : int) -> void:
 	do_generate_map(file_name, "inv_uv", size)
+
+func create_menu_generate_curvature_map(menu) -> void:
+	create_menu_map(menu, "generate_curvature_map")
+
+func generate_curvature_map(i : int) -> void:
+	generate_map("do_generate_curvature_map", 256 << i)
+
+func do_generate_curvature_map(file_name : String, size : int) -> void:
+	do_generate_map(file_name, "curvature", size)
+
+func create_menu_generate_thickness_map(menu) -> void:
+	create_menu_map(menu, "generate_thickness_map")
+
+func generate_thickness_map(i : int) -> void:
+	generate_map("do_generate_thickness_map", 256 << i)
+
+func do_generate_thickness_map(file_name : String, size : int) -> void:
+	do_generate_map(file_name, "thickness", size)
+
+func create_menu_generate_ao_map(menu) -> void:
+	create_menu_map(menu, "generate_ao_map")
+
+func generate_ao_map(i : int) -> void:
+	generate_map("do_generate_ao_map", 256 << i)
+
+func do_generate_ao_map(file_name : String, size : int) -> void:
+	do_generate_map(file_name, "ao", size)

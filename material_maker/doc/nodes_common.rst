@@ -44,7 +44,7 @@ Inputs
 ^^^^^^
 
 Inputs are images the node will transform (if any). An input is always connected to at most
-an output. Inputs generally have a default value that is used when it is not connected.
+one output. Inputs generally have a default value that is used when it is not connected.
 
 Parameters
 ^^^^^^^^^^
@@ -54,8 +54,18 @@ Parameters are used to configure nodes. The following types are supported:
 * **float** parameters are used whenever a real number is needed. Float parameters have
   bounds, but it is possible to ignore them (at your own risk). To modify a float parameter,
   click in the text field and enter a new value, or click and drag left or right to decrease
-  or decrease its value. When the lower or upper bound is reach, the value will stick to it,
+  or decrease its value. When the lower or upper bound is reached, the value will stick to it,
   but dragging again from there makes it possible to go beyond the limit.
+
+  In most cases, float parameters also support expressions (written in GLSL syntax),
+  where other parameters and named parameters are accepted and must be prefixed with
+  a dollar sign. This feature is useful when two parameters of the same node must
+  depend on each other, or when several parameters of several nodes of a subgraph
+  must be calculated from one or more named parameters.
+  
+  The *$time* variable can also be used in parameter expressions to define animations
+  in generated shaders, but generated PBR materials will still be static (this feature
+  could for example be used to export variations of the same material).
 * **size** parameters are power of two values for the image size. They are used when
   actually storing data in a texture, or when performing resolution dependent calculations
   such as convolutions. They are shown as drop down list boxes.
@@ -67,6 +77,9 @@ Parameters are used to configure nodes. The following types are supported:
   double-clicking in the lower part of the widget, dragged left and right using the left
   mouse button, and removed using the right mouse button.
 
+  .. image:: images/gradient_editor.png
+    :align: center
+
   The drop down list box can be used to select one of the 4 interpolation options.
   
   Double clicking in the upper part of the gradient editor will open a larger version of the
@@ -76,15 +89,39 @@ Parameters are used to configure nodes. The following types are supported:
   another to duplicate the gradient parameter, or from any **Colorize** node variant in the
   library to a gradient editor widget.
 
-.. image:: images/gradient_editor.png
-	:align: center
+* **curve** parameters are edited using a dedicated dialog window that is shown when clicking on
+  the parameter.
+  
+  .. image:: images/curve_editor.png
+    :align: center
+    :scale: 50%
+
+  The curve is defined by its control points that define their value and left and right slopes
+  for given abscissas. Control points (as well as slope control points) can be grabbed and moved
+  using the left mouse button.
+
+  New control points can be added by double-clicking in the editor, and control points can be
+  removed using the right mouse button.
+
+* **polygon** parameters are edited using a dedicated dialog window that is shown when clicking on
+  the parameter.
+  
+  .. image:: images/polygon_editor.png
+    :align: center
+    :scale: 50%
+
+  The polygon parameter is defined by its vertices that can be grabbed and moved using the left
+  mouse button.
+  
+  New vertices can be created by double-clicking in the editor (when created, a new vertex will
+  be used to split the closest edge), and deleted using the right mouse button.
 
 Randomness
 ^^^^^^^^^^
 
 Nodes that provide random patterns have an implicit **seed** parameter. It is not possible
 to edit it directly, but moving the node in the graph will change its value. It is possible
-to freeze the seed value using the small dice button in the node's title bar in the graph.
+to freeze the seed value using the small die button in the node's title bar in the graph.
 
 .. image:: images/random_node.png
 	:align: center

@@ -11,6 +11,7 @@ var editable : bool = false
 
 var transmits_seed : bool = true
 
+signal graph_changed()
 signal connections_changed(removed_connections, added_connections)
 signal hierarchy_changed()
 
@@ -37,11 +38,13 @@ func has_randomness() -> bool:
 			return true
 	return false
 
-func set_position(p) -> void:
+func set_position(p, force_recalc_seed = false) -> void:
+	if !force_recalc_seed && position == p:
+		return
 	position = p
 	if !is_seed_locked():
 		for c in get_children():
-			c.set_position(c.position)
+			c.set_position(c.position, true)
 
 func get_type() -> String:
 	return "graph"
@@ -134,8 +137,8 @@ func get_port_targets(gen_name: String, output_index: int) -> Array:
 
 func add_generator(generator : MMGenBase) -> bool:
 	var name = generator.name
-	if generator.name == "Material":
-		if has_node("Material"):
+	if generator.name == "Material" or generator.name == "Brush" :
+		if has_node(generator.name):
 			# Cannot create a material if it exists already
 			return false
 		else:
@@ -160,6 +163,7 @@ func add_generator(generator : MMGenBase) -> bool:
 	add_child(generator)
 	if generator.get_script() == get_script():
 		emit_hierarchy_changed()
+	emit_signal("graph_changed")
 	return true
 
 func remove_generator(generator : MMGenBase) -> bool:
@@ -181,6 +185,7 @@ func remove_generator(generator : MMGenBase) -> bool:
 	if generator.get_script() == get_script():
 		emit_hierarchy_changed()
 	generator.queue_free()
+	emit_signal("graph_changed")
 	return true
 
 func replace_generator(old : MMGenBase, new : MMGenBase) -> void:
@@ -191,6 +196,7 @@ func replace_generator(old : MMGenBase, new : MMGenBase) -> void:
 	if old.get_script() == get_script() or new.get_script() == get_script():
 		emit_hierarchy_changed()
 	old.free()
+	emit_signal("graph_changed")
 
 func get_connected_inputs(generator) -> Array:
 	var rv : Array = []
@@ -275,6 +281,22 @@ func reconnect_outputs(generator, reconnects : Dictionary) -> bool:
 		emit_signal("connections_changed", removed_connections, added_connections)
 	return true
 
+func get_named_parameters() -> Dictionary:
+	var named_parameters : Dictionary = {}
+	for c in get_children():
+		if c is MMGenRemote:
+			var remote_named_parameters = c.get_named_parameters()
+			for k in remote_named_parameters.keys():
+				named_parameters[k] = remote_named_parameters[k]
+	return named_parameters
+
+func get_globals() -> String:
+	var globals : String = ""
+	for c in get_children():
+		if c is MMGenRemote:
+			globals += c.get_globals()
+	return globals
+
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> Dictionary:
 	var outputs = get_node("gen_outputs")
 	if outputs != null:
@@ -298,7 +320,7 @@ func create_subgraph(gens : Array) -> MMGenGraph:
 	var count = 0
 	# Filter group nodes and calculate boundin box
 	for g in gens:
-		if g.name != "Material" and g.name != "gen_inputs" and g.name != "gen_outputs":
+		if g.name != "Material" and g.name != "Brush" and g.name != "gen_inputs" and g.name != "gen_outputs":
 			generators.push_back(g)
 			var p = g.position
 			center += p
@@ -395,6 +417,6 @@ func _deserialize(data : Dictionary) -> void:
 	if data.has("shortdesc"):
 		shortdesc = data.shortdesc
 	if data.has("longdesc"):
-		longdesc = data.longdesc 
+		longdesc = data.longdesc
 	var nodes = data.nodes if data.has("nodes") else []
 	mm_loader.add_to_gen_graph(self, nodes, data.connections if data.has("connections") else [])

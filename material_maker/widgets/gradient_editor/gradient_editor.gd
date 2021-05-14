@@ -6,6 +6,8 @@ class GradientCursor:
 	var color : Color
 	var sliding : bool = false
 
+	onready var label : Label = get_parent().get_node("Value")
+
 	const WIDTH : int = 10
 
 	func _ready() -> void:
@@ -27,19 +29,25 @@ class GradientCursor:
 					get_parent().select_color(self, ev.global_position)
 				elif ev.pressed:
 					sliding = true
+					label.visible = true
+					label.text = "%.03f" % get_cursor_position()
 				else:
 					sliding = false
+					label.visible = false
 			elif ev.button_index == BUTTON_RIGHT and get_parent().get_sorted_cursors().size() > 2:
 				var parent = get_parent()
 				parent.remove_child(self)
 				parent.update_value()
 				queue_free()
 		elif ev is InputEventMouseMotion and (ev.button_mask & BUTTON_MASK_LEFT) != 0 and sliding:
-			rect_position.x += ev.relative.x
+			rect_position.x += get_local_mouse_position().x
+			if ev.control:
+				rect_position.x = round(get_cursor_position()*20.0)*0.05*(get_parent().rect_size.x - WIDTH)
 			rect_position.x = min(max(0, rect_position.x), get_parent().rect_size.x-rect_size.x)
 			get_parent().update_value()
-	
-	func get_position() -> Vector2:
+			label.text = "%.03f" % get_cursor_position()
+
+	func get_cursor_position() -> float:
 		return rect_position.x / (get_parent().rect_size.x - WIDTH)
 
 	func set_color(c) -> void:

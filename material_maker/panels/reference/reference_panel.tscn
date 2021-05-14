@@ -18,7 +18,6 @@ void fragment() {
 	vec2 uv = center+(UV-0.5)*scale*ratio/min(ratio.x, ratio.y);
 	COLOR = mix(vec4(0.0), texture(image, uv), step(length(uv-clamp(uv, vec2(0.0), vec2(1.0))), 0.0001));
 }"
-custom_defines = ""
 
 [sub_resource type="ImageTexture" id=2]
 
@@ -51,7 +50,7 @@ __meta__ = {
 [node name="Image" type="ColorRect" parent="VBoxContainer"]
 material = SubResource( 3 )
 margin_right = 248.0
-margin_bottom = 299.0
+margin_bottom = 291.0
 size_flags_vertical = 3
 
 [node name="HBoxContainer" type="HBoxContainer" parent="VBoxContainer/Image"]
@@ -78,9 +77,9 @@ margin_bottom = 20.0
 text = ">"
 
 [node name="Colors" type="HBoxContainer" parent="VBoxContainer"]
-margin_top = 298.0
+margin_top = 290.0
 margin_right = 248.0
-margin_bottom = 330.0
+margin_bottom = 322.0
 custom_constants/separation = -1
 __meta__ = {
 "_edit_use_anchors_": false
@@ -111,9 +110,14 @@ margin_right = 248.0
 size_flags_horizontal = 3
 
 [node name="GradientSlot" parent="VBoxContainer" instance=ExtResource( 3 )]
-margin_top = 329.0
+margin_top = 321.0
 margin_right = 248.0
 margin_bottom = 353.0
+
+[node name="ContextMenu" type="PopupMenu" parent="."]
+margin_right = 20.0
+margin_bottom = 20.0
+items = [ "Load Reference", null, 0, false, false, 0, 0, null, "", false, "Remove Reference", null, 0, false, false, 1, 0, null, "", false ]
 [connection signal="gui_input" from="VBoxContainer/Image" to="." method="_on_Image_gui_input"]
 [connection signal="resized" from="VBoxContainer/Image" to="." method="_on_Image_resized"]
 [connection signal="pressed" from="VBoxContainer/Image/HBoxContainer/Prev" to="." method="change_image" binds= [ -1 ]]
@@ -124,3 +128,5 @@ margin_bottom = 353.0
 [connection signal="clicked" from="VBoxContainer/Colors/ColorSlot4" to="." method="select_slot"]
 [connection signal="clicked" from="VBoxContainer/Colors/ColorSlot5" to="." method="select_slot"]
 [connection signal="clicked" from="VBoxContainer/GradientSlot" to="." method="select_slot"]
+[connection signal="about_to_show" from="ContextMenu" to="." method="_on_ContextMenu_about_to_show"]
+[connection signal="index_pressed" from="ContextMenu" to="." method="_on_ContextMenu_index_pressed"]
