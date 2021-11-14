@@ -8,9 +8,12 @@ var output_count = 0
 var preview : ColorRect
 var preview_timer : Timer = Timer.new()
 
+func _ready() -> void:
+	add_to_group("updated_from_locale")
+
 func _draw() -> void:
 	._draw()
-	if generator != null and generator.preview >= 0:
+	if generator != null and generator.preview >= 0 and get_connection_output_count() > 0:
 		var conn_pos = get_connection_output_position(generator.preview)
 		conn_pos /= get_global_transform().get_scale()
 		draw_texture(preload("res://material_maker/icons/output_preview.tres"), conn_pos-Vector2(8, 8), get_color("title_color"))
@@ -63,6 +66,7 @@ func on_parameter_changed(p : String, v) -> void:
 		update_node()
 	else:
 		update_control_from_parameter(controls, p, v)
+		update_parameter_tooltip(p, v)
 	get_parent().set_need_save()
 
 static func initialize_controls_from_generator(control_list, generator, object) -> void:
@@ -103,21 +107,32 @@ static func initialize_controls_from_generator(control_list, generator, object) 
 func initialize_properties() -> void:
 	initialize_controls_from_generator(controls, generator, self)
 
+func update_parameter_tooltip(p : String, v):
+	if ! controls.has(p):
+		return
+	for d in generator.get_parameter_defs():
+		if d.name == p:
+			controls[p].hint_tooltip = get_parameter_tooltip(d, v)
+			break
+
 func _on_text_changed(new_text, variable : String) -> void:
 	ignore_parameter_change = variable
 	generator.set_parameter(variable, new_text)
+	update_parameter_tooltip(variable, new_text)
 	ignore_parameter_change = ""
 	get_parent().set_need_save()
 
 func _on_value_changed(new_value, variable : String) -> void:
 	ignore_parameter_change = variable
 	generator.set_parameter(variable, new_value)
+	update_parameter_tooltip(variable, new_value)
 	ignore_parameter_change = ""
 	get_parent().set_need_save()
 
 func _on_color_changed(new_color, variable : String) -> void:
 	ignore_parameter_change = variable
 	generator.set_parameter(variable, new_color)
+	update_parameter_tooltip(variable, new_color)
 	ignore_parameter_change = ""
 	get_parent().set_need_save()
 
@@ -145,8 +160,22 @@ func _on_polygon_changed(new_polygon, variable : String) -> void:
 	ignore_parameter_change = ""
 	get_parent().set_need_save()
 
+static func get_parameter_tooltip(p : Dictionary, parameter_value = null) -> String:
+	var tooltip : String
+	if p.has("shortdesc"):
+		tooltip = TranslationServer.translate(p.shortdesc)+" ("+TranslationServer.translate(p.name)+")"
+		if parameter_value != null:
+			tooltip += " = "+str(parameter_value)
+		if p.has("longdesc"):
+			tooltip += "\n"+TranslationServer.translate(p.longdesc)
+	elif p.has("longdesc"):
+		tooltip += TranslationServer.translate(p.longdesc)
+	return wrap_string(tooltip)
+
 static func create_parameter_control(p : Dictionary, accept_float_expressions : bool) -> Control:
 	var control = null
+	if !p.has("type"):
+		return null
 	if p.type == "float":
 		control = preload("res://material_maker/widgets/float_edit/float_edit.tscn").instance()
 		if ! accept_float_expressions:
@@ -168,6 +197,7 @@ static func create_parameter_control(p : Dictionary, accept_float_expressions : 
 			var value = p.values[i]
 			control.add_item(value.name)
 			control.selected = 0 if !p.has("default") else p.default
+		control.rect_min_size.x = 80
 	elif p.type == "boolean":
 		control = CheckBox.new()
 	elif p.type == "color":
@@ -180,23 +210,21 @@ static func create_parameter_control(p : Dictionary, accept_float_expressions : 
 		control = preload("res://material_maker/widgets/curve_edit/curve_edit.tscn").instance()
 	elif p.type == "polygon":
 		control = preload("res://material_maker/widgets/polygon_edit/polygon_edit.tscn").instance()
+	elif p.type == "polyline":
+		control = preload("res://material_maker/widgets/polygon_edit/polygon_edit.tscn").instance()
+		control.set_closed(false)
 	elif p.type == "string":
 		control = LineEdit.new()
+		control.rect_min_size.x = 80
 	elif p.type == "image_path":
 		control = preload("res://material_maker/widgets/image_picker_button/image_picker_button.tscn").instance()
 	elif p.type == "file":
 		control = preload("res://material_maker/widgets/file_picker_button/file_picker_button.tscn").instance()
+		control.rect_min_size.x = 80
 		if p.has("filters"):
 			for f in p.filters:
 				control.add_filter(f)
-	var tooltip : String
-	if p.has("shortdesc"):
-		tooltip = p.shortdesc+" ("+p.name+")"
-		if p.has("longdesc"):
-			tooltip += "\n"+p.longdesc
-	elif p.has("longdesc"):
-		tooltip += p.longdesc
-	control.hint_tooltip = wrap_string(tooltip)
+	control.hint_tooltip = get_parameter_tooltip(p)
 	return control
 
 func save_preview_widget() -> void:
@@ -238,7 +266,7 @@ func update_preview() -> void:
 func do_update_preview() -> void:
 	if !preview.is_inside_tree():
 		restore_preview_widget()
-	preview.set_generator(generator, generator.preview)
+	preview.set_generator(generator, generator.preview, true)
 	var pos = Vector2(0, 0)
 	var parent = preview.get_parent()
 	while parent != self:
@@ -253,10 +281,9 @@ func update_rendering_time(t : int) -> void:
 	update_title()
 
 func update_title() -> void:
-	if rendering_time < 0:
-		title = generator.get_type_name()
-	else:
-		title = generator.get_type_name()+" ("+str(rendering_time)+"ms)"
+	title = TranslationServer.translate(generator.get_type_name())
+	if rendering_time > 0:
+		title += " ("+str(rendering_time)+"ms)"
 	if generator == null or generator.minimized:
 		var font : Font = get_font("default_font")
 		var max_title_width = 28
@@ -384,7 +411,6 @@ func update_node() -> void:
 		initialize_properties()
 	# Outputs
 	var outputs = generator.get_output_defs()
-	var button_width = 0
 	output_count = outputs.size()
 	for i in range(output_count):
 		var output = outputs[i]
@@ -406,12 +432,6 @@ func update_node() -> void:
 		hsizer = get_child(i)
 		if hsizer.get_child_count() == 0:
 			hsizer.rect_min_size.y = 12
-	if !outputs.empty():
-		for i in range(output_count, get_child_count()):
-			var hsizer : HBoxContainer = get_child(i)
-			var empty_control : Control = Control.new()
-			empty_control.rect_min_size.x = button_width
-			hsizer.add_child(empty_control)
 	# Edit buttons
 	if generator.is_editable():
 		var edit_buttons = preload("res://material_maker/nodes/edit_buttons.tscn").instance()
@@ -524,3 +544,7 @@ func on_mouse_entered():
 func on_mouse_exited():
 	if !generator.minimized and !get_global_rect().has_point(get_global_mouse_position()):
 		preview.visible = true
+
+
+func update_from_locale() -> void:
+	update_title()
