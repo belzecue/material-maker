@@ -35,6 +35,7 @@ class OutputPort:
 
 var position : Vector2 = Vector2(0, 0)
 var model = null
+var orig_name = null
 var parameters = {}
 
 var seed_locked : bool = false
@@ -70,7 +71,7 @@ func toggle_editable() -> bool:
 func is_template() -> bool:
 	return model != null
 
-func get_template_name() -> bool:
+func get_template_name() -> String:
 	return model
 
 func is_editable() -> bool:
@@ -256,10 +257,11 @@ static func generate_preview_shader(src_code, type, main_fct = "void fragment() 
 	code += main_fct
 	return code
 
-func render(object: Object, output_index : int, size : int, preview : bool = false) -> Object:
+func generate_output_shader(output_index : int, preview : bool = false):
 	var context : MMGenContext = MMGenContext.new()
 	var source = get_shader_code("uv", output_index, context)
 	while source is GDScriptFunctionState:
+		assert(false)
 		source = yield(source, "completed")
 	if source.empty():
 		source = DEFAULT_GENERATED_SHADER
@@ -272,10 +274,16 @@ func render(object: Object, output_index : int, size : int, preview : bool = fal
 		shader = generate_preview_shader(source, output_type)
 	else:
 		shader = mm_renderer.generate_shader(source)
+	return { shader=shader, output_type=output_type, textures=source.textures }
+
+func render(object: Object, output_index : int, size : int, preview : bool = false) -> Object:
+	var output_shader : Dictionary = generate_output_shader(output_index, preview)
+	var shader : String = output_shader.shader
+	var output_type : String = output_shader.output_type
 	var renderer = mm_renderer.request(object)
 	while renderer is GDScriptFunctionState:
 		renderer = yield(renderer, "completed")
-	renderer = renderer.render_shader(object, shader, source.textures, size, output_type != "rgba")
+	renderer = renderer.render_shader(object, shader, output_shader.textures, size, output_type != "rgba")
 	while renderer is GDScriptFunctionState:
 		renderer = yield(renderer, "completed")
 	return renderer

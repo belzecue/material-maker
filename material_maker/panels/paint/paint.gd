@@ -12,10 +12,10 @@ var settings : Dictionary = {
 const MODE_FREEHAND_DOTS = 0
 const MODE_FREEHAND_LINE = 1
 const MODE_LINE          = 2
-const MODE_FILL          = 3
+const MODE_STAMP         = 3
 const MODE_COLOR_PICKER  = 4
 const MODE_COUNT         = 5
-const MODE_NAMES : Array = [ "FreeDots", "FreeLine", "Line", "Fill", "ColorPicker" ]
+const MODE_NAMES : Array = [ "FreeDots", "FreeLine", "Line", "Stamp", "ColorPicker" ]
 
 var current_tool = MODE_FREEHAND_DOTS
 
@@ -40,6 +40,9 @@ var brush_size : float = 50.0
 var brush_hardness : float = 0.5
 var pattern_scale : float = 10.0
 var pattern_angle : float = 0.0
+
+var idmap_filename : String = ""
+var mask : ImageTexture
 
 onready var view_3d = $VSplitContainer/HSplitContainer/Painter/View
 onready var main_view = $VSplitContainer/HSplitContainer/Painter/View/MainView
@@ -94,6 +97,13 @@ func _ready():
 	update_brush_graph()
 	call_deferred("update_brush")
 	set_environment(0)
+	# Create white mask
+	mask = ImageTexture.new()
+	var image = Image.new()
+	image.create(16, 16, 0, Image.FORMAT_RGBA8)
+	image.fill(Color(1, 1, 1))
+	mask.create_from_image(image)
+
 
 func update_tab_title() -> void:
 	if !get_parent().has_method("set_tab_title"):
@@ -282,6 +292,15 @@ func _on_Fill_pressed():
 	painter.fill(eraser_button.pressed)
 	set_need_save()
 
+func _on_MaskSelector_pressed():
+	var dialog = load("res://material_maker/panels/paint/select_mask_dialog.tscn").instance()
+	add_child(dialog)
+	var result = dialog.ask({ mesh=painted_mesh.mesh, idmap_filename=idmap_filename, mask=mask })
+	while result is GDScriptFunctionState:
+		result = yield(result, "completed")
+	if result != null and result.has("idmap_filename"):
+		idmap_filename = result.idmap_filename
+
 func _physics_process(delta):
 	camera_rotation1.rotate(camera.global_transform.basis.x.normalized(), -key_rotate.y*delta)
 	camera_rotation2.rotate(Vector3(0, 1, 0), -key_rotate.x*delta)
@@ -319,11 +338,15 @@ func get_pressure(event : InputEventMouse) -> float:
 				last_pressure = 1.0
 	return last_pressure
 
+var last_tilt : Vector2 = Vector2(0, 0)
+
 # UI input for 3D view_3d
 
 const PAINTING_MODE_VIEW = 0
 const PAINTING_MODE_TEXTURE = 1
 const PAINTING_MODE_TEXTURE_FROM_VIEW = 2
+
+var stamp_center : Vector2
 
 func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VIEW):
 	var mouse_position : Vector2
@@ -346,20 +369,25 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 		painter.update_brush_params( { stroke_length=stroke_length, stroke_angle=stroke_angle } )
 		if current_tool == MODE_COLOR_PICKER:
 			show_brush(null, null)
-		else:
-			if current_tool == MODE_LINE:
-				if previous_position != null:
-					var direction = mouse_position-previous_position
-					painter.set_brush_angle(-atan2(direction.y, direction.x))
-				if dont_paint:
-					show_brush(null, null)
-				else:
-					show_brush(mouse_position, previous_position)
+		elif current_tool == MODE_LINE:
+			if previous_position != null:
+				var direction = mouse_position-previous_position
+				painter.update_brush_params( { pattern_angle=-atan2(direction.y, direction.x) } )
+			if dont_paint:
+				show_brush(null, null)
 			else:
-				if dont_paint:
-					show_brush(null, null)
-				else:
-					show_brush(mouse_position, mouse_position)
+				show_brush(mouse_position, previous_position)
+		elif current_tool == MODE_STAMP and ev.button_mask & BUTTON_MASK_LEFT != 0:
+			var stamp_offset = mouse_position - stamp_center
+			var stamp_size = stamp_offset.length()
+			var stamp_angle = -stamp_offset.angle()
+			painter.update_brush_params( { brush_size=stamp_size, pattern_angle=stamp_angle } )
+			show_brush(stamp_center, stamp_center)
+		else:
+			if dont_paint:
+				show_brush(null, null)
+			else:
+				show_brush(mouse_position, mouse_position)
 		if ev.button_mask & BUTTON_MASK_LEFT != 0:
 			if ev.shift:
 				reset_stroke()
@@ -376,9 +404,9 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 				pattern_scale = clamp(pattern_scale, 0.1, 25.0)
 				pattern_angle += fmod(ev.relative.y*0.01, 2.0*PI)
 				painter.update_brush_params( { pattern_scale=pattern_scale, pattern_angle=pattern_angle } )
-				painter.update_brush()
 			elif current_tool == MODE_FREEHAND_DOTS or current_tool == MODE_FREEHAND_LINE:
-				paint(mouse_position, get_pressure(ev), painting_mode)
+				paint(mouse_position, get_pressure(ev), ev.tilt, painting_mode)
+				last_tilt = ev.tilt
 			elif ev.relative.length_squared() > 50:
 				get_pressure(ev)
 		else:
@@ -390,6 +418,12 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 				if ev.pressed:
 					stroke_length = 0.0
 					previous_position = mouse_position
+					if current_tool == MODE_STAMP:
+						stamp_center = mouse_position
+						painter.update_brush_params( { brush_size=0 } )
+						show_brush(stamp_center, stamp_center)
+				elif current_tool == MODE_STAMP:
+					paint(stamp_center, get_pressure(ev), last_tilt, painting_mode, true)
 				elif current_tool == MODE_COLOR_PICKER:
 					pick_color(ev.position)
 				else:
@@ -398,10 +432,11 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 						if previous_position != null:
 							var direction = mouse_position-previous_position
 							angle = -atan2(direction.y, direction.x)
-						painter.set_brush_angle(angle)
+						painter.update_brush_params( { pattern_angle=angle } )
+						painter.update_brush()
 					else:
 						last_painted_position = mouse_position+Vector2(brush_spacing_control.value, brush_spacing_control.value)
-					paint(mouse_position, get_pressure(ev), painting_mode)
+					paint(mouse_position, get_pressure(ev), last_tilt, painting_mode, true)
 					reset_stroke()
 
 func _on_View_gui_input(ev : InputEvent):
@@ -559,6 +594,7 @@ func show_brush(p, op = null):
 		brush_view_3d.material.set_shader_param("texture_space", paint_engine_button.pressed)
 		brush_view_3d.material.set_shader_param("brush_pos", p)
 		brush_view_3d.material.set_shader_param("brush_ppos", op)
+		brush_view_3d.material.set_shader_param("mask_tex", mask)
 	update_brush_view_3d_visibility()
 
 func update_brush_view_3d_visibility():
@@ -575,22 +611,22 @@ func reset_stroke() -> void:
 	stroke_length = 0.0
 	previous_position = null
 
-func paint(pos, pressure = 1.0, painting_mode : int = PAINTING_MODE_VIEW):
+func paint(pos : Vector2, pressure : float = 1.0, tilt : Vector2 = Vector2(0, 0), painting_mode : int = PAINTING_MODE_VIEW, end_of_stroke : bool = false):
 	if layers.selected_layer == null or layers.selected_layer.get_layer_type() == Layer.LAYER_PROC:
 		return
 	if current_tool == MODE_FREEHAND_DOTS or current_tool == MODE_FREEHAND_LINE:
-		if (pos-last_painted_position).length() < brush_spacing_control.value:
+		if ! end_of_stroke and (pos-last_painted_position).length() < brush_spacing_control.value:
 			return
 		if current_tool == MODE_FREEHAND_DOTS:
 			previous_position = null
-	do_paint(pos, pressure, painting_mode)
+	do_paint(pos, pressure, tilt, painting_mode, end_of_stroke)
 	last_painted_position = pos
 
 var next_paint_to = null
 var next_pressure = null
 
-func do_paint(pos, pressure = 1.0, painting_mode : int = PAINTING_MODE_VIEW):
-	if painting:
+func do_paint(pos : Vector2, pressure : float = 1.0, tilt : Vector2 = Vector2(0, 0), painting_mode : int = PAINTING_MODE_VIEW, end_of_stroke : bool = false):
+	if !end_of_stroke and painting:
 		# if not available for painting, record a paint order
 		next_paint_to = pos
 		next_pressure = pressure
@@ -607,6 +643,8 @@ func do_paint(pos, pressure = 1.0, painting_mode : int = PAINTING_MODE_VIEW):
 		stroke_angle=stroke_angle,
 		erase=eraser_button.pressed,
 		pressure=pressure,
+		tilt=tilt,
+		mask_tex=mask,
 		fill=false
 	}
 	match painting_mode:
@@ -621,7 +659,7 @@ func do_paint(pos, pressure = 1.0, painting_mode : int = PAINTING_MODE_VIEW):
 			paint_options.rect_size = view_2d.rect_size
 			paint_options.texture_center = view_2d_center
 			paint_options.texture_scale = view_2d_scale
-	painter.paint(paint_options)
+	painter.paint(paint_options, end_of_stroke)
 	previous_position = pos
 	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
@@ -631,7 +669,7 @@ func do_paint(pos, pressure = 1.0, painting_mode : int = PAINTING_MODE_VIEW):
 	if next_paint_to != null:
 		pos = next_paint_to
 		next_paint_to = null
-		paint(pos, next_pressure, painting_mode)
+		paint(pos, next_pressure, tilt, painting_mode, end_of_stroke)
 
 func update_view():
 	var mesh_instance = painted_mesh
@@ -732,6 +770,8 @@ func load_project(file_name) -> bool:
 		set_settings(data.settings)
 	elif data.has("texture_size"):
 		set_settings({ texture_size=int(round(log(data.texture_size)/log(2))) })
+	if data.has("idmap"):
+		idmap_filename = data.idmap
 	layers.load(data, file_name)
 	set_need_save(false)
 	return true
@@ -749,6 +789,8 @@ func do_save_project(file_name):
 	var data = layers.save(file_name)
 	data.model = model_path
 	data.settings = get_settings()
+	if idmap_filename != "":
+		data.idmap = idmap_filename
 	var file = File.new()
 	if file.open(file_name, File.WRITE) == OK:
 		file.store_string(to_json(data))

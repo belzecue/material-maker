@@ -3,6 +3,7 @@ extends Node
 onready var view_to_texture_viewport = $View2Texture
 onready var view_to_texture_mesh = $View2Texture/PaintedMesh
 onready var view_to_texture_camera = $View2Texture/Camera
+var view_to_texture_image : Image
 
 onready var texture_to_view_viewport = $Texture2View
 onready var texture_to_view_mesh = $Texture2View/PaintedMesh
@@ -177,7 +178,9 @@ func update_view(c, t, s):
 	camera = c
 	transform = t
 	viewport_size = s
-	brush_params.view_vector = transform.basis.xform_inv(Vector3(0.0, 0.0, 1.0)).normalized()
+	brush_params.view_back = transform.basis.xform_inv(Vector3(0.0, 0.0, 1.0)).normalized()
+	brush_params.view_right = transform.basis.xform_inv(Vector3(1.0, 0.0, 0.0)).normalized()
+	brush_params.view_up = transform.basis.xform_inv(Vector3(0.0, 1.0, 0.0)).normalized()
 	update_tex2view()
 	update_brush()
 
@@ -201,6 +204,8 @@ func update_tex2view():
 	view_to_texture_viewport.update_worlds()
 	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
+	view_to_texture_image = view_to_texture_viewport.get_texture().get_data()
+	view_to_texture_image.lock()
 	mat = texture_to_view_mesh.get_surface_material(0)
 	if true:
 		var shader_file = File.new()
@@ -222,8 +227,10 @@ func get_shader_file(file_name : String) -> String:
 		shader_text = shader_files[file_name]
 	else:
 		var file = File.new()
-		file.open("res://material_maker/tools/painter/shaders/"+file_name+".shader", File.READ)
-		shader_text = file.get_as_text()
+		if file.open("res://material_maker/tools/painter/shaders/"+file_name+".shader", File.READ) == OK:
+			shader_text = file.get_as_text()
+		else:
+			print("Cannot open %s.shader" % file_name)
 		shader_files[file_name] = shader_text
 	return shader_text
 
@@ -257,6 +264,12 @@ func get_brush_preview_shader(mode : String) -> String:
 func set_brush_angle(a) -> void:
 	brush_params.pattern_angle = a
 	update_brush()
+
+func update_brush_params(shader_params : Dictionary) -> void:
+	for p in shader_params.keys():
+		brush_params[p] = shader_params[p]
+		if brush_preview_material != null:
+			brush_preview_material.set_shader_param(p, brush_params[p])
 
 func show_pattern(b):
 	if pattern_shown != b:
@@ -357,37 +370,32 @@ func on_float_parameters_changed(parameter_changes : Dictionary) -> bool:
 	mm_renderer.update_float_parameters(brush_preview_material, parameter_changes)
 	return true
 
-func update_brush_params(shader_params : Dictionary) -> void:
-	for p in shader_params.keys():
-		brush_params[p] = shader_params[p]
-		if brush_preview_material != null:
-			brush_preview_material.set_shader_param(p, brush_params[p])
-
-func paint(shader_params : Dictionary) -> void:
+func paint(shader_params : Dictionary, end_of_stroke : bool = false) -> void:
 	if has_albedo:
-		albedo_viewport.do_paint(shader_params)
+		albedo_viewport.do_paint(shader_params, end_of_stroke)
 	if has_mr:
-		mr_viewport.do_paint(shader_params)
+		mr_viewport.do_paint(shader_params, end_of_stroke)
 	if has_emission:
-		emission_viewport.do_paint(shader_params)
+		emission_viewport.do_paint(shader_params, end_of_stroke)
 	if has_normal:
-		normal_viewport.do_paint(shader_params)
+		normal_viewport.do_paint(shader_params, end_of_stroke)
 	if has_do:
-		do_viewport.do_paint(shader_params)
+		do_viewport.do_paint(shader_params, end_of_stroke)
 	if has_mask:
-		mask_viewport.do_paint(shader_params)
+		mask_viewport.do_paint(shader_params, end_of_stroke)
+	yield(get_tree(), "idle_frame")
+	yield(get_tree(), "idle_frame")
+	yield(get_tree(), "idle_frame")
+	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
 	emit_signal("painted")
 
 func fill(erase : bool, reset : bool = false) -> void:
-	paint({ brush_pos=Vector2(0, 0), brush_ppos=Vector2(0, 0), erase=erase, pressure=1.0, fill=true, reset=reset })
+	paint({ brush_pos=Vector2(0, 0), brush_ppos=Vector2(0, 0), erase=erase, pressure=1.0, fill=true, reset=reset }, true)
 
 func view_to_texture(position : Vector2) -> Vector2:
-	var view_to_texture_image = view_to_texture_viewport.get_texture().get_data()
-	view_to_texture_image.lock()
 	var position_in_texture : Color = view_to_texture_image.get_pixelv(position*VIEW_TO_TEXTURE_RATIO)
-	view_to_texture_image.unlock()
 	if position_in_texture.r == position_in_texture.b && position_in_texture.g == position_in_texture.b:
 		return Vector2(-1, -1)
 	else:
