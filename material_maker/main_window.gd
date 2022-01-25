@@ -67,9 +67,9 @@ const MENU = [
 	{ menu="File", command="close_project", shortcut="Control+Shift+Q", description="Close" },
 	{ menu="File", command="quit", shortcut="Control+Q", description="Quit" },
 
-	#{ menu="Edit", command="edit_undo", shortcut="Control+Z", description="Undo" },
-	#{ menu="Edit", command="edit_redo", shortcut="Control+Shift+Z", description="Redo" },
-	#{ menu="Edit" },
+	{ menu="Edit", command="edit_undo", shortcut="Control+Z", description="Undo" },
+	{ menu="Edit", command="edit_redo", shortcut="Control+Shift+Z", description="Redo" },
+	{ menu="Edit" },
 	{ menu="Edit", command="edit_cut", shortcut="Control+X", description="Cut" },
 	{ menu="Edit", command="edit_copy", shortcut="Control+C", description="Copy" },
 	{ menu="Edit", command="edit_paste", shortcut="Control+V", description="Paste" },
@@ -107,7 +107,6 @@ const MENU = [
 	{ menu="Help", command="show_doc", shortcut="F1", description="User manual" },
 	{ menu="Help", command="show_library_item_doc", shortcut="Control+F1", description="Show selected library item documentation" },
 	{ menu="Help", command="bug_report", description="Report a bug" },
-	{ menu="Help", command="show_reddit", description="Material Maker on reddit" },
 	{ menu="Help" },
 	{ menu="Help", command="about", description="About" }
 ]
@@ -125,6 +124,7 @@ const DEFAULT_CONFIG = {
 	ui_3d_preview_sun_shadow = false,
 	bake_ray_count = 64,
 	bake_ao_ray_dist = 128.0,
+	bake_ao_ray_bias = 0.005,
 	bake_denoise_radius = 3
 }
 
@@ -687,26 +687,26 @@ func edit_cut() -> void:
 		graph_edit.cut()
 
 func edit_undo() -> void:
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit != null:
-		graph_edit.get_node("UndoRedo").undo()
+	var project = get_current_project()
+	if project != null and project.get("undoredo") != null:
+		project.undoredo.undo()
 
 func edit_undo_is_disabled() -> bool:
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit != null:
-		return !graph_edit.get_node("UndoRedo").can_undo()
-	return false
+	var project = get_current_project()
+	if project != null and project.get("undoredo") != null:
+		return !project.undoredo.can_undo()
+	return true
 
 func edit_redo() -> void:
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit != null:
-		graph_edit.get_node("UndoRedo").redo()
+	var project = get_current_project()
+	if project != null and project.get("undoredo") != null:
+		project.undoredo.redo()
 
 func edit_redo_is_disabled() ->  bool:
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit != null:
-		return !graph_edit.get_node("UndoRedo").can_redo()
-	return false
+	var project = get_current_project()
+	if project != null and project.get("undoredo") != null:
+		return !project.undoredo.can_redo()
+	return true
 
 func edit_cut_is_disabled() -> bool:
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
@@ -958,9 +958,6 @@ func show_library_item_doc_is_disabled() -> bool:
 
 func bug_report() -> void:
 	OS.shell_open("https://github.com/RodZill4/godot-procedural-textures/issues")
-
-func show_reddit() -> void:
-	OS.shell_open("https://www.reddit.com/r/MaterialMaker/")
 
 func about() -> void:
 	var about_box = preload("res://material_maker/windows/about/about.tscn").instance()
