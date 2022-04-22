@@ -67,10 +67,11 @@ func load_gen(filename: String) -> MMGenBase:
 	var file = File.new()
 	if file.open(filename, File.READ) == OK:
 		var data = parse_json(file.get_as_text())
-		current_project_path = filename.get_base_dir()
-		var generator = create_gen(data)
-		current_project_path = ""
-		return generator
+		if data != null:
+			current_project_path = filename.get_base_dir()
+			var generator = create_gen(data)
+			current_project_path = ""
+			return generator
 	return null
 
 func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = Vector2(0, 0)) -> Dictionary:
@@ -86,7 +87,7 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 				rv.generators.append(g)
 			gennames[orig_name] = g.name
 		else:
-			print("Cannot create gen "+n)
+			print("Cannot create gen "+str(n))
 	for c in connections:
 		if gennames.has(c.from):
 			c.from = gennames[c.from]
@@ -105,6 +106,7 @@ func create_gen(data) -> MMGenBase:
 		{ keyword="nodes", type=MMGenGraph },
 		{ keyword="is_brush", type=MMGenBrush },
 		{ keyword="shader_model", type=MMGenShader },
+		{ keyword="sdf_scene", type=MMGenSDF },
 		{ keyword="model_data", type=MMGenShader },
 		{ keyword="widgets", type=MMGenRemote }
 	]
@@ -114,6 +116,7 @@ func create_gen(data) -> MMGenBase:
 		image = MMGenImage,
 		text = MMGenText,
 		iterate_buffer = MMGenIterateBuffer,
+		sdf = MMGenSDF,
 		ios = MMGenIOs,
 		switch = MMGenSwitch,
 		export = MMGenExport,

@@ -1,12 +1,18 @@
 extends Node
 
+
+const DEBUG : bool = false
+
+
 export var background_material : Material
 
 var initialized = false
 onready var painter = $Painter
 onready var camera = $Viewport/Camera
 
+
 func set_brush(brush) -> Texture:
+	painter.set_texture_size(1024)
 	if !initialized:
 		var preview_material : SpatialMaterial = SpatialMaterial.new()
 		preview_material.albedo_texture = painter.get_albedo_texture()
@@ -28,9 +34,9 @@ func set_brush(brush) -> Texture:
 		#$NormalMap/Rect.material.set_shader_param("tex", painter.get_depth_texture())
 		preview_material.normal_texture = $NormalMap.get_texture()
 		preview_material.normal_texture.flags = Texture.FLAGS_DEFAULT
-		preview_material.depth_enabled = true
-		preview_material.depth_deep_parallax = true
 		# TODO: Fix this
+		#preview_material.depth_enabled = true
+		#preview_material.depth_deep_parallax = true
 		#preview_material.depth_texture = painter.get_depth_texture()
 		#preview_material.depth_texture.flags = Texture.FLAGS_DEFAULT
 		$Viewport/Object.set_surface_material(0, preview_material)
@@ -73,19 +79,19 @@ func set_brush(brush) -> Texture:
 		pressure=1.0,
 		fill=false
 	}
-	painter.paint(paint_parameters)
-	yield(get_tree(), "idle_frame")
-	yield(get_tree(), "idle_frame")
+	painter.paint(paint_parameters, true)
+	yield(painter, "end_of_stroke")
+	painter.paint(paint_parameters, true)
+	yield(painter, "end_of_stroke")
 	$NormalMap.render_target_update_mode = Viewport.UPDATE_ONCE
 	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
 	$Viewport.render_target_update_mode = Viewport.UPDATE_ONCE
 	yield(get_tree(), "idle_frame")
 	yield(get_tree(), "idle_frame")
-	"""
-	for i in painter.debug_get_texture_names().size():
-		var t = painter.debug_get_texture(i)
-		t.get_data().save_png("d:/debug_brush_preview_%d.png" % i)
-	"""
+	if DEBUG:
+		for i in painter.debug_get_texture_names().size():
+			var t = painter.debug_get_texture(i)
+			t.get_data().save_png("d:/debug_brush_preview_%d.png" % i)
 	initialized = true
 	return $Viewport.get_texture()
