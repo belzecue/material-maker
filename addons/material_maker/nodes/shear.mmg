@@ -9,6 +9,7 @@
 		"center": 0,
 		"direction": 1
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
 		"global": "",
@@ -17,8 +18,8 @@
 				"default": "vec4(1.0)",
 				"label": "",
 				"longdesc": "The input image",
-				"name": "in",
-				"shortdesc": "Input",
+				"name": "in#",
+				"shortdesc": "Input#",
 				"type": "rgba"
 			}
 		],
@@ -28,8 +29,8 @@
 		"outputs": [
 			{
 				"longdesc": "Shows the transformed image",
-				"rgba": "$in($uv+$amount*($uv.yx-vec2($center))*vec2($direction))",
-				"shortdesc": "Output",
+				"rgba": "$in#($uv+$amount*($uv.yx-vec2($center))*vec2($direction))",
+				"shortdesc": "Output#",
 				"type": "rgba"
 			}
 		],

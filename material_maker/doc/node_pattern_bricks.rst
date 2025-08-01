@@ -10,7 +10,7 @@ or pavement.
 Inputs
 ++++++
 
-The **Bricks** node accepts 3 optional greyscale input maps for the shape mortar,
+The **Bricks** node accepts 3 optional grayscale input maps for the shape mortar,
 bevel and round parameters (the corresponding parameter is multiplied by the map value).
 
 Outputs
@@ -18,13 +18,13 @@ Outputs
 
 The **Bricks** node provides the following textures:
 
-* The first is a greyscale image where bricks are shown in white and mortar in black.
+* The first is a grayscale image where bricks are shown in white and mortar in black.
 
-* The second is an RGBA texture that contains the bounding box for each brick.
+* The second is Fill information for each brick and must be connected to a Fill companion node.
 
-* The third is an RGBA texture that contains the bounding box for each brick corner.
+* The third is Fill information for each brick corner and must be connected to a Fill companion node.
 
-The bounding box textures can be used in conjunction with **Fill To** nodes to generate random colors,
+The second and third outputs can be used in conjunction with **Fill To** nodes to generate random colors,
 custom UVs etc. to create complex materials that show for example bricks of different colors.
 
 Parameters

@@ -10,6 +10,7 @@
 		"out_max": 1,
 		"out_min": 0
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
 		"global": "",
@@ -18,19 +19,19 @@
 				"default": "vec4(0.5 ,0.5, 0.5, 1.0)",
 				"label": "",
 				"longdesc": "The input image",
-				"name": "in",
-				"shortdesc": "Input",
+				"name": "in#",
+				"shortdesc": "Input#",
 				"type": "rgba"
 			}
 		],
 		"instance": "",
 		"longdesc": "Maps linearly an input tones interval to an output tones interval.",
-		"name": "Tones map",
+		"name": "Tones Map",
 		"outputs": [
 			{
 				"longdesc": "Shows the generated remapped image",
-				"rgba": "vec4(vec3($out_min)+($in($uv).rgb-vec3($in_min))*vec3(($out_max-$out_min)/($in_max-$in_min)), $in($uv).a)",
-				"shortdesc": "Output",
+				"rgba": "vec4(vec3($out_min)+($in#($uv).rgb-vec3($in_min))*vec3(($out_max-($out_min))/($in_max-($in_min))), $in#($uv).a)",
+				"shortdesc": "Output#",
 				"type": "rgba"
 			}
 		],

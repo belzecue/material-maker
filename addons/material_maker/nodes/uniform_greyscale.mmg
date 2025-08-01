@@ -1,5 +1,5 @@
 {
-	"name": "uniform_greyscale",
+	"name": "uniform_grayscale",
 	"node_position": {
 		"x": 0,
 		"y": 0
@@ -7,6 +7,7 @@
 	"parameters": {
 		"color": 0.5
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
 		"global": "",
@@ -14,8 +15,8 @@
 
 		],
 		"instance": "",
-		"longdesc": "Draws a uniform greyscale image",
-		"name": "Greyscale Uniform",
+		"longdesc": "Draws a uniform grayscale image",
+		"name": "Grayscale Uniform",
 		"outputs": [
 			{
 				"f": "$(color)",
@@ -29,7 +30,7 @@
 				"control": "None",
 				"default": 0.5,
 				"label": "",
-				"longdesc": "The value of the uniform greyscale image",
+				"longdesc": "The value of the uniform grayscale image",
 				"max": 1,
 				"min": 0,
 				"name": "color",

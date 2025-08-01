@@ -7,6 +7,7 @@
 	"parameters": {
 
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
 		"global": "",
@@ -21,7 +22,7 @@
 			}
 		],
 		"instance": "",
-		"longdesc": "Decomposes an RGBA input into 4 greyscale images",
+		"longdesc": "Decomposes an RGBA input into 4 grayscale images",
 		"name": "Decompose",
 		"outputs": [
 			{

@@ -7,9 +7,27 @@
 	"parameters": {
 		"mode": 2
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
-		"global": "float gs_min(vec3 c) {\n\treturn min(c.r, min(c.g, c.b));\n}\nfloat gs_max(vec3 c) {\n\treturn max(c.r, max(c.g, c.b));\n}\nfloat gs_lightness(vec3 c) {\n\treturn 0.5*(max(c.r, max(c.g, c.b)) + min(c.r, min(c.g, c.b)));\n}\nfloat gs_average(vec3 c) {\n\treturn 0.333333333333*(c.r + c.g + c.b);\n}\nfloat gs_luminosity(vec3 c) {\n\treturn 0.21 * c.r + 0.72 * c.g + 0.07 * c.b;\n}\n",
+		"global": [
+			"float gs_min(vec3 c) {",
+			"\treturn min(c.r, min(c.g, c.b));",
+			"}",
+			"float gs_max(vec3 c) {",
+			"\treturn max(c.r, max(c.g, c.b));",
+			"}",
+			"float gs_lightness(vec3 c) {",
+			"\treturn 0.5*(max(c.r, max(c.g, c.b)) + min(c.r, min(c.g, c.b)));",
+			"}",
+			"float gs_average(vec3 c) {",
+			"\treturn 0.333333333333*(c.r + c.g + c.b);",
+			"}",
+			"float gs_luminosity(vec3 c) {",
+			"\treturn 0.21 * c.r + 0.72 * c.g + 0.07 * c.b;",
+			"}",
+			""
+		],
 		"inputs": [
 			{
 				"default": "vec3(0.0)",
@@ -21,12 +39,12 @@
 			}
 		],
 		"instance": "",
-		"longdesc": "Converts its input into greyscale",
-		"name": "Greyscale",
+		"longdesc": "Converts its input into grayscale",
+		"name": "Grayscale",
 		"outputs": [
 			{
 				"f": "gs_$mode($in($uv))",
-				"longdesc": "Shows the image converted to greyscale",
+				"longdesc": "Shows the image converted to grayscale",
 				"shortdesc": "Output",
 				"type": "f"
 			}
@@ -35,7 +53,7 @@
 			{
 				"default": 4,
 				"label": "",
-				"longdesc": "The algorithm used to convert the input into greyscale",
+				"longdesc": "The algorithm used to convert the input into grayscale",
 				"name": "mode",
 				"shortdesc": "Mode",
 				"type": "enum",
@@ -63,7 +81,7 @@
 				]
 			}
 		],
-		"shortdesc": "Greyscale"
+		"shortdesc": "Grayscale"
 	},
 	"type": "shader"
 }

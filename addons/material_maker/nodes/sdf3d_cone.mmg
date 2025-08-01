@@ -8,6 +8,7 @@
 		"a": 30,
 		"axis": 2
 	},
+	"seed_int": 0,
 	"shader_model": {
 		"code": "",
 		"global": "",
@@ -65,7 +66,9 @@
 				"step": 1,
 				"type": "float"
 			}
-		]
+		],
+		"shortdesc": "Cone",
+		"longdesc": "Generates an infinite cone as a signed distance function"
 	},
 	"type": "shader"
 }

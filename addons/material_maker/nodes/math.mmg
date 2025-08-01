@@ -10,15 +10,23 @@
 		"default_in2": 0,
 		"op": 0
 	},
-	"seed": 0,
-	"seed_locked": false,
+	"seed_int": 0,
 	"shader_model": {
-		"code": "float $(name_uv)_clamp_false = $op;\nfloat $(name_uv)_clamp_true = clamp($(name_uv)_clamp_false, 0.0, 1.0);\n",
-		"global": "",
+		"code": [
+			"float $(name_uv)_clamp_false = $op;",
+			"float $(name_uv)_clamp_true = clamp($(name_uv)_clamp_false, 0.0, 1.0);",
+			""
+		],
+		"global": [
+			"float pingpong(float a, float b)",
+			"{",
+			"  return (b != 0.0) ? abs(fract((a - b) / (b * 2.0)) * b * 2.0 - b) : 0.0;",
+			"}"
+		],
 		"inputs": [
 			{
 				"default": "$default_in1",
-				"label": "2:A",
+				"label": "2:",
 				"longdesc": "The A operand",
 				"name": "in1",
 				"shortdesc": "A",
@@ -26,7 +34,7 @@
 			},
 			{
 				"default": "$default_in2",
-				"label": "B",
+				"label": "",
 				"longdesc": "The B operand",
 				"name": "in2",
 				"shortdesc": "B",
@@ -39,7 +47,7 @@
 		"outputs": [
 			{
 				"f": "$(name_uv)_clamp_$clamp",
-				"longdesc": "Shows a greyscale image of the result",
+				"longdesc": "Shows a grayscale image of the result",
 				"shortdesc": "Output",
 				"type": "f"
 			}
@@ -136,6 +144,66 @@
 					{
 						"name": "smoothstep(0.0, 1.0, A)",
 						"value": "smoothstep(0.0, 1.0, $in1($uv))"
+					},
+					{
+						"name": "ping-pong(A, B)",
+						"value": "pingpong($in1($uv),$in2($uv))"
+					},
+					{
+						"name": "sign(A)",
+						"value": "sign($in1($uv))"
+					},
+					{
+						"name": "mod(A, B)",
+						"value": "mod($in1($uv), $in2($uv))"
+					},
+					{
+						"name": "atan2(A, B)",
+						"value": "atan($in1($uv),$in2($uv))"
+					},
+					{
+						"name": "asin(A)",
+						"value": "asin($in1($uv))"
+					},
+					{
+						"name": "acos(A)",
+						"value": "acos($in1($uv))"
+					},
+					{
+						"name": "atan(A)",
+						"value": "atan($in1($uv))"
+					},
+					{
+						"name": "sinh(A)",
+						"value": "sinh($in1($uv))"
+					},
+					{
+						"name": "cosh(A)",
+						"value": "cosh($in1($uv))"
+					},
+					{
+						"name": "tanh(A)",
+						"value": "tanh($in1($uv))"
+					},
+					{
+						"name": "exp(A)",
+						"value": "exp($in1($uv))"
+					},
+					{
+						"name": "snap(A, B)",
+						"value": "floor($in1($uv)/$in2($uv))*$in2($uv)"
+					},
+					{
+						"name": "radians(A)",
+						"value": "radians($in1($uv))"
+					},
+					{
+						"name": "degrees(A)",
+						"value": "degrees($in1($uv))"
+					},
+					{
+						"name": "log(A, B)",
+						"value": "log($in1($uv))/log($in2($uv))"
 					}
 				]
 			},

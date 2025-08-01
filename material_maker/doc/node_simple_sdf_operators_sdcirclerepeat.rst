@@ -4,7 +4,7 @@ sdCircleRepeat node
 The **sdCircleRepeat** node generates a signed distance image obtained by repeating
 the input on a circle.
 
-.. image:: images/node_simple_sdf_operators_sdcirclerepeat.png
+.. image:: images/node_simple_sdf_operators_sdcircle_repeat.png
 	:align: center
 
 Inputs
@@ -21,8 +21,10 @@ repeated pattern.
 Parameters
 ::::::::::
 
-The **sdCircleRepeat** node accepts *the number of repetitions*
-of the input as parameter.
+The **sdCircleRepeat** node accepts the following parameters:
+
+* The **Count** controls the number of repetitions of the input.
+* The **Variations** control enables variation sampling on the input
 
 Example images
 ::::::::::::::

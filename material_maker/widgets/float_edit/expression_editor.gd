@@ -1,27 +1,41 @@
-extends WindowDialog
+extends Window
 
-var float_edit = null
+var object : Object = null
+var method : String
+var extra_parameters : Array = []
+var accept_empty : bool = false
 
-onready var editor = $MarginContainer/VBoxContainer/TextEdit
-onready var parser = load("res://addons/material_maker/parser/glsl_parser.gd").new()
+@onready var editor = $MarginContainer/VBoxContainer/TextEdit
+@onready var parser = load("res://addons/material_maker/parser/glsl_parser.gd").new()
+
+func _context_menu_about_to_popup(context_menu):
+	context_menu.position =  get_window().position + Vector2i(
+			get_mouse_position() * mm_globals.main_window.get_window().content_scale_factor)
 
 func _ready():
-	pass # Replace with function body.
+	content_scale_factor = mm_globals.main_window.get_window().content_scale_factor
+	min_size = Vector2(300, 100) * content_scale_factor
+	
+	editor.get_menu().about_to_popup.connect(
+			_context_menu_about_to_popup.bind(editor.get_menu()))
 
-func edit_parameter(fe):
-	float_edit = fe
-	window_title = "Expression editor - "+fe.name
-	editor.text = fe.get_value()
+func edit_parameter(wt : String, value : String, o : Object, m : String, ep : Array = [], ae : bool = false):
+	object = o
+	method = m
+	extra_parameters = ep
+	accept_empty = ae
+	title = wt
+	editor.text = value
+	hide()
 	popup_centered()
-	editor.cursor_set_column(editor.text.length())
+	editor.set_caret_column(editor.text.length())
 	editor.grab_focus()
 
 func _on_Apply_pressed():
 	var value = editor.text.replace("\n", "").strip_edges()
-	if value.is_valid_float():
-		float_edit.set_value(float(value), true)
-	else:
-		float_edit.set_value(value, true)
+	var parameters : Array = [ value ]
+	parameters.append_array(extra_parameters)
+	object.callv(method, parameters)
 
 func _on_OK_pressed():
 	_on_Apply_pressed()
@@ -32,16 +46,20 @@ func _on_Cancel_pressed():
 
 func _on_TextEdit_gui_input(event):
 	if event is InputEventKey and event.pressed:
-		match event.scancode:
+		match event.keycode:
 			KEY_ENTER:
 				_on_OK_pressed()
 			KEY_ESCAPE:
 				_on_Cancel_pressed()
 			_:
-				var parse_result = parser.parse(editor.text)
-				if parse_result.status == "OK" and parse_result.non_terminal == "expression":
+				if accept_empty and editor.text == "":
 					$MarginContainer/VBoxContainer/HBoxContainer/OK.disabled = false
 					$MarginContainer/VBoxContainer/HBoxContainer/Apply.disabled = false
 				else:
-					$MarginContainer/VBoxContainer/HBoxContainer/OK.disabled = true
-					$MarginContainer/VBoxContainer/HBoxContainer/Apply.disabled = true
+					var parse_result = parser.parse(editor.text)
+					if parse_result.status == "OK" and parse_result.non_terminal == "expression":
+						$MarginContainer/VBoxContainer/HBoxContainer/OK.disabled = false
+						$MarginContainer/VBoxContainer/HBoxContainer/Apply.disabled = false
+					else:
+						$MarginContainer/VBoxContainer/HBoxContainer/OK.disabled = true
+						$MarginContainer/VBoxContainer/HBoxContainer/Apply.disabled = true

@@ -1,7 +1,24 @@
-extends MMGraphNodeMinimal
+extends GraphElement
+class_name MMGraphComment
 
-onready var label = $VBox/Label
-onready var editor = $VBox/TextEdit
+
+@onready var title = %Title
+@onready var title_edit = %TitleEdit
+@onready var editor = %Text
+
+var disable_undoredo_for_offset : bool = false
+
+var generator : MMGenComment:
+	set(g):
+		generator = g
+		title.text = generator.title
+		editor.text = generator.text
+		position_offset = generator.position
+		size = generator.size
+		update_stylebox()
+		
+		if mm_globals.get_config("auto_size_comment"):
+			resize_to_selection()
 
 var pallette_colors = [
 	Color("F8B8B3"),
@@ -13,39 +30,25 @@ var pallette_colors = [
 ]
 
 const AUTO_SIZE_PADDING : int = 22
+const AUTO_SIZE_TOP_PADDING : int = 72
 
-func _ready():
-	for s in [ "comment", "commentfocus" ]:
-		var frame : StyleBoxFlat = mm_globals.main_window.theme.get_stylebox(s, "GraphNode").duplicate(true) as StyleBoxFlat
-		add_stylebox_override(s, frame);
 
-func _draw() -> void:
-	var icon = preload("res://material_maker/icons/color_palette.png")
-	draw_texture_rect(icon, Rect2(rect_size.x-40, 4, 16, 16), false)
-	if !is_connected("gui_input", self, "_on_gui_input"):
-		connect("gui_input", self, "_on_gui_input")
-
-func set_generator(g) -> void:
-	generator = g
-	label.text = generator.text
-	rect_size = generator.size
-	title = generator.title
-
-	set_stylebox_color(generator.color)
-	
-	if mm_globals.get_config("auto_size_comment"):
-		resize_to_selection()
+func do_set_position(o : Vector2) -> void:
+	disable_undoredo_for_offset = true
+	position_offset = o
+	generator.position = o
+	disable_undoredo_for_offset = false
 
 func _on_resize_request(new_size : Vector2) -> void:
 	var parent : GraphEdit = get_parent()
-	if parent.use_snap:
-		new_size = parent.snap_distance*Vector2(round(new_size.x/parent.snap_distance), round(new_size.y/parent.snap_distance))
-	if rect_size == new_size:
+	if parent.snapping_enabled:
+		new_size = parent.snapping_distance*Vector2(round(new_size.x/parent.snapping_distance), round(new_size.y/parent.snapping_distance))
+	if size == new_size:
 		return
-	var undo_action = { type="resize_comment", node=generator.get_hier_name(), size=rect_size }
+	var undo_action = { type="resize_comment", node=generator.get_hier_name(), size=size }
 	var redo_action = { type="resize_comment", node=generator.get_hier_name(), size=new_size }
 	get_parent().undoredo.add("Resize comment", [undo_action], [redo_action], true)
-	rect_size = new_size
+	size = new_size
 	generator.size = new_size
 
 func resize_to_selection() -> void:
@@ -53,95 +56,105 @@ func resize_to_selection() -> void:
 	var parent : GraphEdit = get_parent()
 	var selected_nodes : Array = parent.get_selected_nodes()
 	
-	if not selected_nodes.empty():
-		var min_bounds : Vector2 = Vector2(INF, INF)
-		var max_bounds : Vector2 = Vector2(-INF, -INF)
-		for node in selected_nodes:
-			var node_pos : Vector2 = node.offset
-			var node_size : Vector2 = node.get_size()
+	if selected_nodes.is_empty():
+		return
+	var min_bounds : Vector2 = Vector2(INF, INF)
+	var max_bounds : Vector2 = Vector2(-INF, -INF)
+	for node in selected_nodes:
+		var node_pos : Vector2 = node.position_offset
+		var node_size : Vector2 = node.get_size()
+		
+		# Top-left corner
+		if node_pos.x < min_bounds.x:
+			min_bounds.x = node_pos.x
+		if node_pos.y < min_bounds.y:
+			min_bounds.y = node_pos.y
 			
-			# Top-left corner
-			if node_pos.x < min_bounds.x:
-				min_bounds.x = node_pos.x
-			if node_pos.y < min_bounds.y:
-				min_bounds.y = node_pos.y
-				
-			# Bottom-right corner
-			var bottom_right : Vector2 = Vector2(node_pos.x + node_size.x, node_pos.y + node_size.y)
-			if bottom_right.x > max_bounds.x:
-				max_bounds.x = bottom_right.x
-			if bottom_right.y > max_bounds.y:
-				max_bounds.y = bottom_right.y
-				
-		offset = Vector2(min_bounds.x - AUTO_SIZE_PADDING, min_bounds.y - AUTO_SIZE_PADDING)
-		
-		# Size needs to account for offset padding as well (Padding * 2)
-		var new_size : Vector2 = Vector2(max_bounds.x - min_bounds.x + AUTO_SIZE_PADDING * 2,
-										 max_bounds.y - min_bounds.y + AUTO_SIZE_PADDING * 2)
-		
-		rect_size = new_size
-		generator.size = new_size
+		# Bottom-right corner
+		var bottom_right : Vector2 = Vector2(node_pos.x + node_size.x, node_pos.y + node_size.y)
+		if bottom_right.x > max_bounds.x:
+			max_bounds.x = bottom_right.x
+		if bottom_right.y > max_bounds.y:
+			max_bounds.y = bottom_right.y
+	
+	position_offset = Vector2(min_bounds.x - AUTO_SIZE_PADDING, min_bounds.y - AUTO_SIZE_TOP_PADDING)
+	generator.position = position_offset
 
-func _on_Label_gui_input(ev) -> void:
-	if ev is InputEventMouseButton and ev.doubleclick and ev.button_index == BUTTON_LEFT:
-		editor.rect_min_size = label.rect_size + Vector2(0, rect_size.y - get_minimum_size().y)
-		editor.text = label.text
-		label.visible = false
-		editor.visible = true
+	# Size needs to account for offset padding as well (Padding * 2)
+	var new_size : Vector2 = Vector2(max_bounds.x - min_bounds.x, max_bounds.y - min_bounds.y)
+	new_size += Vector2(AUTO_SIZE_PADDING * 2, AUTO_SIZE_TOP_PADDING + AUTO_SIZE_PADDING)
+	
+	size = new_size
+	generator.size = new_size
+
+# Title edit
+
+func _on_gui_input(event):
+	if event is InputEventMouseMotion:
+		if event.position.x > size.x-10 and event.position.y > size.y-10:
+			mouse_default_cursor_shape = Control.CURSOR_FDIAGSIZE
+		else:
+			mouse_default_cursor_shape = Control.CURSOR_ARROW
+
+func _on_Title_gui_input(event):
+	if event is InputEventMouseButton and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+		title_edit.text = title.text
+		title.visible = false
+		title_edit.visible = true
+		title_edit.select_all()
+		title_edit.grab_focus()
+		accept_event()
+
+func _on_title_edit_focus_exited():
+	title.text = title_edit.text
+	generator.title = title.text
+	title.visible = true
+	title_edit.visible = false
+
+func _on_title_edit_text_submitted(_new_text):
+	_on_title_edit_focus_exited()
+
+# Text edit
+
+func _on_text_gui_input(event):
+	if event is InputEventMouseButton and event.double_click and event.button_index == MOUSE_BUTTON_LEFT:
+		editor.editable = true
+		editor.mouse_filter = MOUSE_FILTER_STOP
 		editor.select_all()
 		editor.grab_focus()
+		accept_event()
 
-var focus_lost = false
+func _on_text_focus_exited():
+	editor.editable = false
+	editor.mouse_filter = MOUSE_FILTER_PASS
+	generator.text = editor.text
 
-func _on_TextEdit_focus_entered():
-	focus_lost = false
+# Comment color
 
-func _on_TextEdit_focus_exited() -> void:
-	focus_lost = true
-	yield(get_tree(), "idle_frame")
-	if focus_lost:
-		label.text = editor.text
-		generator.text = editor.text
-		label.visible = true
-		editor.visible = false
-
-func _on_gui_input(event) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == BUTTON_LEFT:
-		if Rect2(rect_size.x-40, 4, 16, 16).has_point(event.position):
-			var light_theme = "light" in mm_globals.main_window.theme.resource_path
-			accept_event()
-			$Popup.rect_position = event.global_position
-			$Popup.popup()
-			var corrected_color = pallette_colors.duplicate(true)
-			if !light_theme:
-				for i in corrected_color.size():
-					corrected_color[i] = corrected_color[i].darkened(0.5)
-			corrected_color.push_front(Color.webgray)
-			corrected_color.push_front(Color.white if light_theme else Color.black)
-			var palette_rects = $Popup/GridContainer.get_children()
-			palette_rects.pop_back()
-			for i in palette_rects.size():
-				palette_rects[i].color = corrected_color[i]
-				if !palette_rects[i].is_connected("pressed", self, "set_color"):
-					palette_rects[i].connect("pressed", self, "set_color")
-		elif event.doubleclick:
-			name_change_popup()
+func _on_change_color_pressed():
+	var light_theme = "light" in mm_globals.main_window.theme.resource_path
+	accept_event()
+	var content_scale_factor = mm_globals.main_window.get_window().content_scale_factor
+	$Popup.get_window().content_scale_factor = content_scale_factor
+	$Popup.get_window().size = $Popup.get_window().get_contents_minimum_size() * content_scale_factor
+	$Popup.position = get_screen_transform() * get_local_mouse_position()
+	$Popup.popup()
+	var corrected_color = pallette_colors.duplicate(true)
+	if !light_theme:
+		for i in corrected_color.size():
+			corrected_color[i] = corrected_color[i].darkened(0.5)
+	corrected_color.push_front(Color.WEB_GRAY)
+	corrected_color.push_front(Color.WHITE if light_theme else Color.BLACK)
+	var palette_rects = $Popup/GridContainer.get_children()
+	palette_rects.pop_back()
+	for i in palette_rects.size():
+		palette_rects[i].color = corrected_color[i]
+		if not palette_rects[i].is_connected("pressed",Callable(self,"set_color")):
+			palette_rects[i].connect("pressed",Callable(self,"set_color"))
 
 func update_node() -> void:
-	rect_size = generator.size
-	set_stylebox_color(generator.color)
-
-func name_change_popup() -> void:
-	accept_event()
-	var dialog = preload("res://material_maker/windows/line_dialog/line_dialog.tscn").instance()
-	add_child(dialog)
-	var status = dialog.enter_text("Comment", "Enter the comment node title", generator.title)
-	while status is GDScriptFunctionState:
-		status = yield(status, "completed")
-	if status.ok:
-		title = status.text
-		generator.title = status.text
-		get_parent().send_changed_signal()
+	size = generator.size
+	update_stylebox()
 
 func set_color(c):
 	$Popup.hide()
@@ -151,19 +164,71 @@ func set_color(c):
 	var redo_action = { type="comment_color_change", node=generator.get_hier_name(), color=c }
 	get_parent().undoredo.add("Change comment color", [undo_action], [redo_action], true)
 	generator.color = c
-	set_stylebox_color(c)
+	update_stylebox()
 	get_parent().send_changed_signal()
 
-func set_stylebox_color(c):
-	c.a = 0.3
-	get_stylebox("comment").bg_color = c
-	get_stylebox("commentfocus").bg_color = c
+func update_stylebox():
+	var c : Color = generator.color
+	c.a = 0.5
+	var stylebox : StyleBoxFlat = get_theme_stylebox("selected" if selected else "default", "MM_CommentNode").duplicate()
+	stylebox.bg_color = c
+	$PanelContainer.add_theme_stylebox_override("panel", stylebox)
+	$PanelContainer/ResizerIcon.texture = get_theme_icon("resizer", "MM_CommentNode")
 
 func _on_ColorChooser_gui_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == BUTTON_LEFT:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		accept_event()
 		$Popup.hide()
-		$PopupSelector.popup(Rect2(event.global_position, $PopupSelector.get_minimum_size()))
+		var content_scale_factor = mm_globals.main_window.get_window().content_scale_factor
+		$PopupSelector.get_window().content_scale_factor = content_scale_factor
+		$PopupSelector.get_window().min_size = $PopupSelector.get_window().get_contents_minimum_size() * content_scale_factor
+		$PopupSelector.get_window().position = get_global_mouse_position() * content_scale_factor
+		$PopupSelector.popup()
 		$PopupSelector/PanelContainer/ColorPicker.color = generator.color
-		if !$PopupSelector/PanelContainer/ColorPicker.is_connected("color_changed", self, "set_color"):
-			$PopupSelector/PanelContainer/ColorPicker.connect("color_changed", self, "set_color")
+		if not $PopupSelector/PanelContainer/ColorPicker.color_changed.is_connected(self.set_color):
+			$PopupSelector/PanelContainer/ColorPicker.color_changed.connect(self.set_color)
+
+func _on_close_pressed():
+	get_parent().remove_node(self)
+
+func _on_dragged(_from, to):
+	_on_raise_request()
+	generator.position = to
+
+func _on_position_offset_changed():
+	_on_raise_request()
+	if ! disable_undoredo_for_offset:
+		get_parent().undoredo_move_node(generator.name, generator.position, position_offset)
+		generator.set_position(position_offset)
+
+func _on_node_selected():
+	_on_raise_request()
+	update_stylebox()
+
+func _on_node_deselected():
+	_on_raise_request()
+	update_stylebox()
+
+func _on_raise_request():
+	var parent = get_parent()
+	for i in parent.get_child_count():
+		var child = parent.get_child(i)
+		if child == self:
+			break
+		if not child is MMGraphComment:
+			get_parent().move_child(self, i)
+			break
+
+
+func _context_menu_about_to_popup(context_menu : PopupMenu) -> void:
+	context_menu.position = get_screen_transform() * get_local_mouse_position()
+
+
+func _on_title_edit_ready() -> void:
+	%TitleEdit.get_menu().about_to_popup.connect(
+			_context_menu_about_to_popup.bind(%TitleEdit.get_menu()))
+
+
+func _on_text_ready() -> void:
+	%Text.get_menu().about_to_popup.connect(
+			_context_menu_about_to_popup.bind(%Text.get_menu()))

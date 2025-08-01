@@ -39,6 +39,7 @@ func undo() -> void:
 		if parent.has_method("undoredo_post"):
 			parent.undoredo_post(state)
 		performing_action = false
+		mm_globals.main_window.update_menus()
 
 func can_redo() -> bool:
 	return step < stack.size()
@@ -61,6 +62,7 @@ func redo() -> void:
 			parent.undoredo_post(state)
 		step += 1
 		performing_action = false
+		mm_globals.main_window.update_menus()
 
 func compare_actions(a, b):
 	if a == b:
@@ -99,12 +101,14 @@ func add(action_name : String, undo_actions : Array, redo_actions : Array, merge
 	if performing_action:
 		print("ERROR: undo/redo action tries to register undo/redo action")
 		return
+	var merged : bool = false
 	while stack.size() > step:
 		stack.pop_back()
 	if merge_with_previous and step > 0 and compare_actions(undo_actions, stack.back().redo_actions):
 		stack.back().redo_actions = redo_actions
+		merged = true
 	elif merge_with_previous and step > 0 and get_parent().has_method("undoredo_merge") and get_parent().undoredo_merge(action_name, undo_actions, redo_actions, stack.back()):
-		pass
+		merged = true
 	elif group_level > 0 and group != null:
 		undo_actions.append_array(stack.back().undo_actions)
 		group.undo_actions = undo_actions
@@ -116,4 +120,6 @@ func add(action_name : String, undo_actions : Array, redo_actions : Array, merge
 		if group_level > 0:
 			group = undo_redo
 	if OS.is_debug_build():
-		get_node("/root/MainWindow/UndoRedoLabel").show_step(step)
+		get_node("/root/MainWindow").get_node("%UndoRedoLabel").show_step(step)
+	if not merged:
+		mm_globals.main_window.update_menus()
